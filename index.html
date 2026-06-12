@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ES管理ノート</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f6f3;
+    --card: #ffffff;
+    --ink: #2b2a27;
+    --sub: #8a877f;
+    --line: #e6e3dc;
+    --accent: #c96f4a;
+    --accent-soft: #fbeee7;
+    --green: #4a8c5c;
+    --green-soft: #e9f3ec;
+    --red: #c0504d;
+    --red-soft: #f9ebea;
+    --blue: #4a6e8c;
+    --blue-soft: #eaf1f6;
+    --gray-soft: #efeeea;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  /* ===== header ===== */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  h1 { font-size: 20px; font-weight: 700; }
+  h1 span { color: var(--accent); }
+  .top-actions { display: flex; gap: 8px; }
+
+  button {
+    font-family: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 8px; padding: 7px 14px; transition: background .15s;
+  }
+  button:hover { background: var(--gray-soft); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: #b35e3b; }
+  button.danger { color: var(--red); }
+  button.small { padding: 3px 10px; font-size: 12px; border-radius: 6px; }
+
+  /* ===== toolbar ===== */
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  #search {
+    flex: 1; min-width: 200px; padding: 8px 12px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  }
+  #search:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); font-size: 12px; cursor: pointer;
+  }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  select {
+    font-family: inherit; font-size: 13px; padding: 7px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+  }
+
+  /* ===== cards ===== */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; cursor: pointer; transition: box-shadow .15s, transform .15s;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.07); transform: translateY(-1px); }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card-name { font-size: 16px; font-weight: 700; word-break: break-all; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .b-draft { background: var(--gray-soft); color: var(--sub); }
+  .b-done  { background: var(--blue-soft); color: var(--blue); }
+  .b-pass  { background: var(--green-soft); color: var(--green); }
+  .b-fail  { background: var(--red-soft); color: var(--red); }
+  .card-meta { font-size: 12px; color: var(--sub); display: flex; gap: 10px; flex-wrap: wrap; }
+  .due-warn { color: var(--red); font-weight: 700; }
+  .due-soon { color: var(--accent); font-weight: 600; }
+  .card-preview {
+    font-size: 12px; color: var(--sub);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .empty {
+    grid-column: 1/-1; text-align: center; color: var(--sub); padding: 60px 20px;
+    border: 2px dashed var(--line); border-radius: 12px;
+  }
+
+  /* ===== detail ===== */
+  .detail-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+  .saved-note { font-size: 12px; color: var(--sub); opacity: 0; transition: opacity .3s; }
+  .saved-note.show { opacity: 1; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 14px; }
+  .frow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .frow:last-child { margin-bottom: 0; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field.grow { flex: 1; min-width: 180px; }
+  label { font-size: 12px; color: var(--sub); font-weight: 600; }
+  input[type="text"], input[type="date"], input[type="number"], textarea {
+    font-family: inherit; font-size: 14px; padding: 8px 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 120px; line-height: 1.7; }
+  #c-name { font-size: 16px; font-weight: 700; }
+
+  .q-panel { position: relative; }
+  .q-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; }
+  .q-num { font-size: 12px; font-weight: 700; color: var(--accent); }
+  .q-tools { display: flex; gap: 6px; }
+  .count { font-size: 12px; color: var(--sub); text-align: right; margin-top: 4px; }
+  .count b { font-size: 14px; color: var(--ink); }
+  .count.over b { color: var(--red); }
+  .count .ok { color: var(--green); font-weight: 600; }
+  .count .ng { color: var(--red); font-weight: 700; }
+  .add-q { width: 100%; padding: 12px; border: 2px dashed var(--line); background: transparent; color: var(--sub); border-radius: 12px; font-weight: 600; }
+  .add-q:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .hidden { display: none; }
+  footer { margin-top: 28px; text-align: center; font-size: 11px; color: var(--sub); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== list view ===== -->
+  <div id="view-list">
+    <div class="top">
+      <h1>ES管理ノート <span>📋</span></h1>
+      <div class="top-actions">
+        <button id="btn-export" class="small" title="バックアップ用JSONを書き出し">書き出し</button>
+        <button id="btn-import" class="small" title="JSONバックアップを読み込み">読み込み</button>
+        <input type="file" id="file-import" accept=".json" class="hidden">
+        <button id="btn-add" class="primary">＋ 新しい企業</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="search" type="text" placeholder="企業名・設問・回答を検索…">
+      <div class="chips" id="status-chips"></div>
+      <select id="sort">
+        <option value="deadline">締切が近い順</option>
+        <option value="updated">更新が新しい順</option>
+        <option value="name">企業名順</option>
+      </select>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <!-- ===== detail view ===== -->
+  <div id="view-detail" class="hidden">
+    <div class="detail-bar">
+      <button id="btn-back">← 一覧に戻る</button>
+      <span class="saved-note" id="saved-note">✓ 保存しました</span>
+      <button id="btn-del" class="danger">この企業を削除</button>
+    </div>
+    <div class="panel">
+      <div class="frow">
+        <div class="field grow"><label>企業名</label><input type="text" id="c-name" placeholder="例：株式会社〇〇"></div>
+        <div class="field"><label>提出締切</label><input type="date" id="c-deadline"></div>
+        <div class="field"><label>ステータス</label>
+          <select id="c-status">
+            <option value="draft">下書き</option>
+            <option value="done">提出済</option>
+            <option value="pass">通過</option>
+            <option value="fail">落選</option>
+          </select>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field grow"><label>メモ（職種・マイページURLなど）</label><input type="text" id="c-memo" placeholder="任意"></div>
+      </div>
+    </div>
+    <div id="q-list"></div>
+    <button class="add-q" id="btn-add-q">＋ 設問を追加</button>
+  </div>
+
+  <footer>データはこのアプリ内に自動保存されます。念のため定期的に「書き出し」でバックアップを取るのがおすすめです。</footer>
+</div>
+
+<script>
+const KEY = 'es-manager-data-v1';
+const STATUS = { draft:['下書き','b-draft'], done:['提出済','b-done'], pass:['通過','b-pass'], fail:['落選','b-fail'] };
+let data = load();
+let currentId = null;
+let filterStatus = 'all';
+let saveTimer = null;
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || { companies: [] }; }
+  catch(e) { return { companies: [] }; }
+}
+function persist(showNote = true) {
+  localStorage.setItem(KEY, JSON.stringify(data));
+  if (showNote) {
+    const n = document.getElementById('saved-note');
+    n.classList.add('show');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => n.classList.remove('show'), 1500);
+  }
+}
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = s => (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ===== list ===== */
+function dueInfo(d) {
+  if (!d) return '';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((new Date(d + 'T00:00:00') - today) / 86400000);
+  const ds = d.replace(/-/g, '/').slice(5);
+  if (diff < 0)  return `<span>締切 ${ds}（終了）</span>`;
+  if (diff === 0) return `<span class="due-warn">締切 本日！</span>`;
+  if (diff <= 3) return `<span class="due-warn">締切 ${ds}（あと${diff}日）</span>`;
+  if (diff <= 7) return `<span class="due-soon">締切 ${ds}（あと${diff}日）</span>`;
+  return `<span>締切 ${ds}</span>`;
+}
+function renderList() {
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const sort = document.getElementById('sort').value;
+  let list = data.companies.filter(c => {
+    if (filterStatus !== 'all' && c.status !== filterStatus) return false;
+    if (!q) return true;
+    const hay = [c.name, c.memo, ...c.questions.flatMap(x => [x.q, x.a])].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+  list.sort((a, b) => {
+    if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'ja');
+    if (sort === 'updated') return (b.updatedAt || 0) - (a.updatedAt || 0);
+    if (!a.deadline && !b.deadline) return (b.updatedAt||0) - (a.updatedAt||0);
+    if (!a.deadline) return 1;
+    if (!b.deadline) return -1;
+    return a.deadline.localeCompare(b.deadline);
+  });
+  const grid = document.getElementById('grid');
+  if (!list.length) {
+    grid.innerHTML = `<div class="empty">${data.companies.length ? '条件に合うESが見つかりません' : 'まだESがありません。<br>「＋ 新しい企業」から最初のESを登録しましょう ✍️'}</div>`;
+    return;
+  }
+  grid.innerHTML = list.map(c => {
+    const [label, cls] = STATUS[c.status] || STATUS.draft;
+    const preview = c.questions.map(x => x.q).filter(Boolean).join(' ／ ');
+    return `<div class="card" data-id="${c.id}">
+      <div class="card-head"><div class="card-name">${esc(c.name) || '（無題）'}</div><span class="badge ${cls}">${label}</span></div>
+      <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}</div>
+      ${preview ? `<div class="card-preview">${esc(preview)}</div>` : ''}
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.card').forEach(el => el.onclick = () => openDetail(el.dataset.id));
+}
+function renderChips() {
+  const wrap = document.getElementById('status-chips');
+  const items = [['all', 'すべて'], ...Object.entries(STATUS).map(([k, v]) => [k, v[0]])];
+  wrap.innerHTML = items.map(([k, l]) => `<button class="chip ${filterStatus === k ? 'on' : ''}" data-s="${k}">${l}</button>`).join('');
+  wrap.querySelectorAll('.chip').forEach(el => el.onclick = () => { filterStatus = el.dataset.s; renderChips(); renderList(); });
+}
+
+/* ===== detail ===== */
+function getCurrent() { return data.companies.find(c => c.id === currentId); }
+function openDetail(id) {
+  currentId = id;
+  const c = getCurrent(); if (!c) return;
+  document.getElementById('view-list').classList.add('hidden');
+  document.getElementById('view-detail').classList.remove('hidden');
+  document.getElementById('c-name').value = c.name || '';
+  document.getElementById('c-deadline').value = c.deadline || '';
+  document.getElementById('c-status').value = c.status || 'draft';
+  document.getElementById('c-memo').value = c.memo || '';
+  renderQuestions();
+  window.scrollTo(0, 0);
+}
+function backToList() {
+  currentId = null;
+  document.getElementById('view-detail').classList.add('hidden');
+  document.getElementById('view-list').classList.remove('hidden');
+  renderList();
+}
+function touch(c) { c.updatedAt = Date.now(); persist(); }
+
+function countHtml(a, limit) {
+  const len = [...(a || '')].length;
+  let extra = '';
+  if (limit > 0) extra = len <= limit ? ` / ${limit}字 <span class="ok">OK</span>` : ` / ${limit}字 <span class="ng">${len - limit}字オーバー</span>`;
+  return `<b>${len}</b>字${extra}`;
+}
+function renderQuestions() {
+  const c = getCurrent();
+  const wrap = document.getElementById('q-list');
+  wrap.innerHTML = c.questions.map((x, i) => `
+    <div class="panel q-panel" data-qid="${x.id}">
+      <div class="q-head">
+        <span class="q-num">設問 ${i + 1}</span>
+        <div class="q-tools">
+          <button class="small act-copy">回答をコピー</button>
+          <button class="small danger act-delq">削除</button>
+        </div>
+      </div>
+      <div class="frow">
+        <div class="field grow"><label>設問</label><input type="text" class="f-q" value="${esc(x.q)}" placeholder="例：学生時代に力を入れたこと"></div>
+        <div class="field" style="width:110px"><label>字数制限</label><input type="number" class="f-limit" min="0" value="${x.limit || ''}" placeholder="例：400"></div>
+      </div>
+      <div class="field"><label>回答</label><textarea class="f-a" placeholder="回答を入力…">${esc(x.a)}</textarea></div>
+      <div class="count ${x.limit > 0 && [...(x.a||'')].length > x.limit ? 'over' : ''}">${countHtml(x.a, x.limit)}</div>
+    </div>`).join('');
+
+  wrap.querySelectorAll('.q-panel').forEach(panel => {
+    const x = c.questions.find(q => q.id === panel.dataset.qid);
+    panel.querySelector('.f-q').oninput = e => { x.q = e.target.value; touch(c); };
+    panel.querySelector('.f-limit').oninput = e => { x.limit = parseInt(e.target.value) || 0; updateCount(panel, x); touch(c); };
+    panel.querySelector('.f-a').oninput = e => { x.a = e.target.value; updateCount(panel, x); touch(c); };
+    panel.querySelector('.act-copy').onclick = () => {
+      navigator.clipboard.writeText(x.a || '').then(() => {
+        const b = panel.querySelector('.act-copy'); b.textContent = '✓ コピー済'; setTimeout(() => b.textContent = '回答をコピー', 1200);
+      });
+    };
+    panel.querySelector('.act-delq').onclick = () => {
+      if (!confirm('この設問を削除しますか？')) return;
+      c.questions = c.questions.filter(q => q.id !== x.id);
+      touch(c); renderQuestions();
+    };
+  });
+}
+function updateCount(panel, x) {
+  const el = panel.querySelector('.count');
+  el.innerHTML = countHtml(x.a, x.limit);
+  el.classList.toggle('over', x.limit > 0 && [...(x.a||'')].length > x.limit);
+}
+
+/* ===== events ===== */
+document.getElementById('btn-add').onclick = () => {
+  const c = { id: uid(), name: '', deadline: '', status: 'draft', memo: '', questions: [{ id: uid(), q: '', limit: 0, a: '' }], updatedAt: Date.now() };
+  data.companies.push(c); persist(false); openDetail(c.id);
+};
+document.getElementById('btn-back').onclick = backToList;
+document.getElementById('btn-del').onclick = () => {
+  const c = getCurrent();
+  if (!confirm(`「${c.name || '無題'}」のESを削除しますか？この操作は取り消せません。`)) return;
+  data.companies = data.companies.filter(x => x.id !== currentId);
+  persist(false); backToList();
+};
+document.getElementById('btn-add-q').onclick = () => {
+  const c = getCurrent();
+  c.questions.push({ id: uid(), q: '', limit: 0, a: '' });
+  touch(c); renderQuestions();
+};
+['c-name', 'c-deadline', 'c-status', 'c-memo'].forEach(id => {
+  document.getElementById(id).oninput = () => {
+    const c = getCurrent(); if (!c) return;
+    c.name = document.getElementById('c-name').value;
+    c.deadline = document.getElementById('c-deadline').value;
+    c.status = document.getElementById('c-status').value;
+    c.memo = document.getElementById('c-memo').value;
+    touch(c);
+  };
+});
+document.getElementById('search').oninput = renderList;
+document.getElementById('sort').onchange = renderList;
+
+document.getElementById('btn-export').onclick = () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ES_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('btn-import').onclick = () => document.getElementById('file-import').click();
+document.getElementById('file-import').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      if (!Array.isArray(d.companies)) throw 0;
+      if (!confirm(`${d.companies.length}社分のデータを読み込みます。現在のデータは上書きされます。よろしいですか？`)) return;
+      data = d; persist(false); renderList();
+    } catch { alert('読み込めませんでした。書き出したJSONファイルを選んでください。'); }
+  };
+  r.readAsText(f); e.target.value = '';
+};
+
+renderChips();
+renderList();
+</script>
+</body>
+</html>

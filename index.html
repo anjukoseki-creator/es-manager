@@ -101,7 +101,7 @@
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field.grow { flex: 1; min-width: 180px; }
   label { font-size: 12px; color: var(--sub); font-weight: 600; }
-  input[type="text"], input[type="date"], input[type="number"], textarea {
+  input[type="text"], input[type="date"], input[type="number"], input[type="password"], textarea {
     font-family: inherit; font-size: 14px; padding: 8px 12px;
     border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink);
   }
@@ -121,6 +121,22 @@
   .add-q { width: 100%; padding: 12px; border: 2px dashed var(--line); background: transparent; color: var(--sub); border-radius: 12px; font-weight: 600; }
   .add-q:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .hidden { display: none; }
+
+  /* ===== modal ===== */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(43,42,39,.45); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal {
+    background: var(--card); border-radius: 14px; padding: 22px;
+    width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .modal h2 { font-size: 16px; }
+  .modal .hint { font-size: 12px; color: var(--sub); }
+  #paste-text { min-height: 220px; font-size: 13px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+  #paste-status { font-size: 12px; color: var(--accent); margin-right: auto; }
   footer { margin-top: 28px; text-align: center; font-size: 11px; color: var(--sub); }
 </style>
 </head>
@@ -135,6 +151,8 @@
         <button id="btn-export" class="small" title="バックアップ用JSONを書き出し">書き出し</button>
         <button id="btn-import" class="small" title="JSONバックアップを読み込み">読み込み</button>
         <input type="file" id="file-import" accept=".json" class="hidden">
+        <button id="btn-paste">📋 貼り付けて取り込み</button>
+        <button id="btn-settings" class="small" title="AI解析の設定">⚙️</button>
         <button id="btn-add" class="primary">＋ 新しい企業</button>
       </div>
     </div>
@@ -176,6 +194,35 @@
     </div>
     <div id="q-list"></div>
     <button class="add-q" id="btn-add-q">＋ 設問を追加</button>
+  </div>
+
+  <!-- ===== paste import modal ===== -->
+  <div id="paste-overlay" class="overlay hidden">
+    <div class="modal">
+      <h2>📋 ESを貼り付けて取り込み</h2>
+      <p class="hint">応募フォームや確認画面のテキストをそのままコピー＆ペーストすると、<span id="parse-mode-label">自動解析</span>で設問・回答・字数制限ごとに分解して登録します。</p>
+      <div class="field"><label>企業名</label><input type="text" id="paste-name" placeholder="例：株式会社〇〇"></div>
+      <div class="field"><label>ES全文</label><textarea id="paste-text" placeholder="ここにESの内容を丸ごと貼り付けてください…"></textarea></div>
+      <div class="modal-actions">
+        <span id="paste-status"></span>
+        <button id="paste-cancel">キャンセル</button>
+        <button id="paste-run" class="primary">取り込む</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== settings modal ===== -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="modal">
+      <h2>⚙️ AI解析の設定</h2>
+      <p class="hint">Google Gemini APIキーを登録すると、貼り付け取り込みでAI解析が使えます。キーは<b>このブラウザ内にのみ</b>保存され、外部に送信されるのはGoogleのAPIだけです。キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
+      <div class="field"><label>Gemini APIキー</label><input type="password" id="gem-key" placeholder="AIza…"></div>
+      <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.5-flash"></div>
+      <div class="modal-actions">
+        <button id="settings-cancel">キャンセル</button>
+        <button id="settings-save" class="primary">保存</button>
+      </div>
+    </div>
   </div>
 
   <footer>データはこのアプリ内に自動保存されます。念のため定期的に「書き出し」でバックアップを取るのがおすすめです。</footer>
@@ -380,6 +427,153 @@ document.getElementById('file-import').onchange = e => {
   r.readAsText(f); e.target.value = '';
 };
 
+/* ===== paste import ===== */
+const LIM_RE = /[（(]\s*(\d+)\s*(?:文字|字)\s*以内\s*[)）]/;
+function heuristicParse(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const isQ = l => LIM_RE.test(l) ||
+    /(してください|ご記入ください|お書きください|ご回答ください|回答ください|教えてください)[。．]?\s*([（(].*[)）])?$/.test(l) ||
+    /(ですか|ますか)[。．？?]?$/.test(l);
+  const isNoise = l =>
+    /(チェックしてください|確認画面|ご注意|『?登録(する|画面)|戻る』?ボタン|エントリーします|私は、?上記に該当|参加可能です。?$|^下記設問|^右記|^上記を確認)/.test(l);
+  const qs = [];
+  let cur = null;
+  for (const l of lines) {
+    if (isNoise(l)) { continue; }
+    if (isQ(l)) {
+      if (cur) qs.push(cur);
+      const m = l.match(LIM_RE);
+      cur = { q: l, limit: m ? parseInt(m[1]) : 0, a: '' };
+    } else if (cur) {
+      cur.a += (cur.a ? '\n' : '') + l;
+    }
+  }
+  if (cur) qs.push(cur);
+  return qs;
+}
+
+function buildPrompt(text) {
+  return `以下は就活エントリーシート（ES）のコピー＆ペーストです。実質的な設問と回答のペアを抽出してください。
+ルール:
+- 確認チェック項目・注意書き・操作説明（「登録するボタンをクリック」等）は除外する
+- 設問文から字数制限（例:「(300字以内)」）を数値で抽出する。なければ0
+- 回答が書かれていない設問は a を空文字にする
+- 選択式設問の選択された回答もそのまま a に入れる
+- 企業名が文中から分かれば name に入れる。不明なら空文字
+- 出力は次のJSONのみ。説明文・コードブロック記法は一切付けない
+{"name":"企業名","questions":[{"q":"設問文","limit":300,"a":"回答文"}]}
+
+--- ES本文 ---
+${text}`;
+}
+function parseJsonOut(raw) {
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('no json');
+  const d = JSON.parse(m[0]);
+  if (!Array.isArray(d.questions)) throw new Error('bad shape');
+  return d;
+}
+async function claudeParse(text) {
+  const res = await window.cowork.askClaude(buildPrompt(text), []);
+  const raw = typeof res === 'string' ? res : (res && (res.text || res.content || res.result)) || JSON.stringify(res);
+  return parseJsonOut(raw);
+}
+
+/* ----- Gemini API（ウェブ版用・キーはこのブラウザにのみ保存） ----- */
+const GEM_KEY = 'es-manager-gemini';
+function geminiConf() {
+  try { return JSON.parse(localStorage.getItem(GEM_KEY)) || {}; } catch { return {}; }
+}
+async function geminiParse(text) {
+  const conf = geminiConf();
+  const model = conf.model || 'gemini-2.5-flash';
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },
+    body: JSON.stringify({ contents: [{ parts: [{ text: buildPrompt(text) }] }] })
+  });
+  if (!r.ok) throw new Error('gemini http ' + r.status);
+  const j = await r.json();
+  const raw = j.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+  return parseJsonOut(raw);
+}
+function aiMode() {
+  if (window.cowork && window.cowork.askClaude) return 'claude';
+  if (geminiConf().key) return 'gemini';
+  return 'none';
+}
+
+function openPasteModal() {
+  const mode = aiMode();
+  document.getElementById('parse-mode-label').textContent =
+    mode === 'claude' ? 'AI（Claude）' : mode === 'gemini' ? 'AI（Gemini）' : '自動解析（⚙️設定でGemini APIキーを登録するとAI解析が使えます）';
+  document.getElementById('paste-status').textContent = '';
+  document.getElementById('paste-overlay').classList.remove('hidden');
+  document.getElementById('paste-text').focus();
+}
+function closePasteModal() { document.getElementById('paste-overlay').classList.add('hidden'); }
+
+document.getElementById('btn-paste').onclick = openPasteModal;
+document.getElementById('paste-cancel').onclick = closePasteModal;
+document.getElementById('paste-overlay').onclick = e => { if (e.target.id === 'paste-overlay') closePasteModal(); };
+
+document.getElementById('paste-run').onclick = async () => {
+  const text = document.getElementById('paste-text').value.trim();
+  if (!text) { alert('ESの内容を貼り付けてください。'); return; }
+  const btn = document.getElementById('paste-run');
+  const status = document.getElementById('paste-status');
+  btn.disabled = true;
+  status.textContent = aiMode() !== 'none' ? 'AIが解析中…（数秒かかります）' : '解析中…';
+  let name = document.getElementById('paste-name').value.trim();
+  let questions = [];
+  try {
+    const mode = aiMode();
+    if (mode !== 'none') {
+      try {
+        const d = mode === 'claude' ? await claudeParse(text) : await geminiParse(text);
+        questions = d.questions.map(x => ({ id: uid(), q: x.q || '', limit: parseInt(x.limit) || 0, a: x.a || '' }));
+        if (!name && d.name) name = d.name;
+      } catch (e) {
+        questions = heuristicParse(text).map(x => ({ id: uid(), ...x }));
+      }
+    } else {
+      questions = heuristicParse(text).map(x => ({ id: uid(), ...x }));
+    }
+    if (!questions.length) {
+      questions = [{ id: uid(), q: '', limit: 0, a: text }];
+      status.textContent = '設問を自動で分けられなかったため、全文を1つの回答として取り込みました。';
+    }
+    const c = { id: uid(), name, deadline: '', status: 'draft', memo: '', questions, updatedAt: Date.now() };
+    data.companies.push(c);
+    persist(false);
+    closePasteModal();
+    document.getElementById('paste-text').value = '';
+    document.getElementById('paste-name').value = '';
+    openDetail(c.id);
+  } finally {
+    btn.disabled = false;
+    if (document.getElementById('paste-overlay').classList.contains('hidden')) status.textContent = '';
+  }
+};
+
+/* ===== settings ===== */
+document.getElementById('btn-settings').onclick = () => {
+  const conf = geminiConf();
+  document.getElementById('gem-key').value = conf.key || '';
+  document.getElementById('gem-model').value = conf.model || 'gemini-2.5-flash';
+  document.getElementById('settings-overlay').classList.remove('hidden');
+};
+document.getElementById('settings-cancel').onclick = () => document.getElementById('settings-overlay').classList.add('hidden');
+document.getElementById('settings-overlay').onclick = e => { if (e.target.id === 'settings-overlay') e.target.classList.add('hidden'); };
+document.getElementById('settings-save').onclick = () => {
+  const key = document.getElementById('gem-key').value.trim();
+  const model = document.getElementById('gem-model').value.trim() || 'gemini-2.5-flash';
+  if (key) localStorage.setItem(GEM_KEY, JSON.stringify({ key, model }));
+  else localStorage.removeItem(GEM_KEY);
+  document.getElementById('settings-overlay').classList.add('hidden');
+};
+
+if (window.cowork && window.cowork.askClaude) document.getElementById('btn-settings').style.display = 'none';
 renderChips();
 renderList();
 </script>

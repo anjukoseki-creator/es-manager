@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ES管理ノート</title>
+<title>就活メモリー</title>
 <style>
   :root {
     color-scheme: light;
@@ -75,6 +75,18 @@
   .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
   .card-name { font-size: 16px; font-weight: 700; word-break: break-all; }
   .badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .stage-badge { background: #efeaf6; color: #6b5a8e; }
+  .card-link { font-size: 12px; color: var(--blue); text-decoration: none; }
+  .card-link:hover { text-decoration: underline; }
+  .hp-row { display: flex; gap: 6px; align-items: center; }
+  .hp-row input { flex: 1; }
+  .stage-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .stage-chip {
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+    background: #fff; font-size: 12px; cursor: pointer;
+  }
+  .stage-chip.on { background: #6b5a8e; color: #fff; border-color: #6b5a8e; font-weight: 600; }
+  .stage-chip.wait.on { background: var(--accent); border-color: var(--accent); }
   .b-draft { background: var(--gray-soft); color: var(--sub); }
   .b-done  { background: var(--blue-soft); color: var(--blue); }
   .b-pass  { background: var(--green-soft); color: var(--green); }
@@ -194,7 +206,7 @@
   <!-- ===== list view ===== -->
   <div id="view-list">
     <div class="top">
-      <h1>ES管理ノート <span>📋</span></h1>
+      <h1>就活メモリー <span>🌸</span></h1>
       <div class="top-actions">
         <button id="btn-export" class="small" title="バックアップ用JSONを書き出し">書き出し</button>
         <button id="btn-import" class="small" title="JSONバックアップを読み込み">読み込み</button>
@@ -237,7 +249,18 @@
         </div>
       </div>
       <div class="frow">
+        <div class="field grow"><label>企業ホームページ</label>
+          <div class="hp-row">
+            <input type="text" id="c-url" placeholder="https://…">
+            <button id="btn-open-url" class="small" title="ホームページを開く">🔗 開く</button>
+          </div>
+        </div>
         <div class="field grow"><label>メモ（職種・マイページURLなど）</label><input type="text" id="c-memo" placeholder="任意"></div>
+      </div>
+      <div class="frow">
+        <div class="field grow"><label>選考状況</label>
+          <div class="stage-chips" id="stage-chips"></div>
+        </div>
       </div>
     </div>
     <div id="q-list"></div>
@@ -280,6 +303,7 @@
 const KEY = 'es-manager-data-v1';
 const STATUS = { draft:['下書き','b-draft'], done:['提出済','b-done'], pass:['通過','b-pass'], fail:['落選','b-fail'] };
 const DECO = { pass:'🌸', fail:'🥀', done:'💓', draft:'' };
+const STAGES = { es:'ES提出', i1:'一次面接', i2:'二次面接', i3:'最終面接', wait:'合格待ち' };
 let data = load();
 let currentId = null;
 let filterStatus = 'all';
@@ -319,7 +343,7 @@ function renderList() {
   let list = data.companies.filter(c => {
     if (filterStatus !== 'all' && c.status !== filterStatus) return false;
     if (!q) return true;
-    const hay = [c.name, c.memo, ...c.questions.flatMap(x => [x.q, x.a])].join(' ').toLowerCase();
+    const hay = [c.name, c.memo, c.url || '', STAGES[c.stage] || '', ...c.questions.flatMap(x => [x.q, x.a])].join(' ').toLowerCase();
     return hay.includes(q);
   });
   list.sort((a, b) => {
@@ -339,9 +363,11 @@ function renderList() {
     const [label, cls] = STATUS[c.status] || STATUS.draft;
     const preview = c.questions.map(x => x.q).filter(Boolean).join(' ／ ');
     const deco = DECO[c.status] ? `<span class="deco">${DECO[c.status]}</span>` : '';
+    const stage = c.stage && STAGES[c.stage] ? `<span class="badge stage-badge">📍 ${STAGES[c.stage]}</span>` : '';
+    const link = c.url ? `<a class="card-link" href="${esc(c.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 HP</a>` : '';
     return `<div class="card s-${c.status}" data-id="${c.id}">
       ${deco}<div class="card-head"><div class="card-name">${esc(c.name) || '（無題）'}</div><span class="badge ${cls}">${label}</span></div>
-      <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}</div>
+      <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}${stage}${link}</div>
       ${preview ? `<div class="card-preview">${esc(preview)}</div>` : ''}
     </div>`;
   }).join('');
@@ -365,13 +391,24 @@ function openDetail(id) {
   document.getElementById('c-deadline').value = c.deadline || '';
   document.getElementById('c-status').value = c.status || 'draft';
   document.getElementById('c-memo').value = c.memo || '';
+  document.getElementById('c-url').value = c.url || '';
   applyTheme(c);
+  renderStageChips(c);
   renderQuestions();
   window.scrollTo(0, 0);
 }
 function applyTheme(c) {
   const p = document.getElementById('c-panel');
   p.className = 'panel' + (c.status && c.status !== 'draft' ? ' s-' + c.status : '');
+}
+function renderStageChips(c) {
+  const wrap = document.getElementById('stage-chips');
+  wrap.innerHTML = Object.entries(STAGES).map(([k, l]) =>
+    `<button class="stage-chip ${k === 'wait' ? 'wait' : ''} ${c.stage === k ? 'on' : ''}" data-stage="${k}">${l}</button>`).join('');
+  wrap.querySelectorAll('.stage-chip').forEach(el => el.onclick = () => {
+    c.stage = c.stage === el.dataset.stage ? '' : el.dataset.stage;
+    touch(c); renderStageChips(c);
+  });
 }
 function backToList() {
   currentId = null;
@@ -432,7 +469,7 @@ function updateCount(panel, x) {
 
 /* ===== events ===== */
 document.getElementById('btn-add').onclick = () => {
-  const c = { id: uid(), name: '', deadline: '', status: 'draft', memo: '', questions: [{ id: uid(), q: '', limit: 0, a: '' }], updatedAt: Date.now() };
+  const c = { id: uid(), name: '', deadline: '', status: 'draft', stage: '', url: '', memo: '', questions: [{ id: uid(), q: '', limit: 0, a: '' }], updatedAt: Date.now() };
   data.companies.push(c); persist(false); openDetail(c.id);
 };
 document.getElementById('btn-back').onclick = backToList;
@@ -447,17 +484,23 @@ document.getElementById('btn-add-q').onclick = () => {
   c.questions.push({ id: uid(), q: '', limit: 0, a: '' });
   touch(c); renderQuestions();
 };
-['c-name', 'c-deadline', 'c-status', 'c-memo'].forEach(id => {
+['c-name', 'c-deadline', 'c-status', 'c-memo', 'c-url'].forEach(id => {
   document.getElementById(id).oninput = () => {
     const c = getCurrent(); if (!c) return;
     c.name = document.getElementById('c-name').value;
     c.deadline = document.getElementById('c-deadline').value;
     c.status = document.getElementById('c-status').value;
     c.memo = document.getElementById('c-memo').value;
+    c.url = document.getElementById('c-url').value.trim();
     applyTheme(c);
     touch(c);
   };
 });
+document.getElementById('btn-open-url').onclick = () => {
+  const u = document.getElementById('c-url').value.trim();
+  if (!u) { alert('ホームページURLを入力してください。'); return; }
+  window.open(/^https?:\/\//.test(u) ? u : 'https://' + u, '_blank', 'noopener');
+};
 document.getElementById('search').oninput = renderList;
 document.getElementById('sort').onchange = renderList;
 
@@ -599,7 +642,7 @@ document.getElementById('paste-run').onclick = async () => {
       questions = [{ id: uid(), q: '', limit: 0, a: text }];
       status.textContent = '設問を自動で分けられなかったため、全文を1つの回答として取り込みました。';
     }
-    const c = { id: uid(), name, deadline: '', status: 'draft', memo: '', questions, updatedAt: Date.now() };
+    const c = { id: uid(), name, deadline: '', status: 'draft', stage: 'es', url: '', memo: '', questions, updatedAt: Date.now() };
     data.companies.push(c);
     persist(false);
     closePasteModal();

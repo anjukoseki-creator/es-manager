@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <meta name="theme-color" content="#f6a8c4">
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -25,6 +26,8 @@
     --blue: #4a6e8c;
     --blue-soft: #eaf1f6;
     --gray-soft: #efeeea;
+    --sakura: #c96f93;
+    --sakura-soft: #fff0f5;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -37,7 +40,7 @@
   .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
   h1 { font-size: 20px; font-weight: 700; }
   h1 span { color: var(--accent); }
-  .top-actions { display: flex; gap: 8px; }
+  .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
   button {
     font-family: inherit; font-size: 13px; cursor: pointer;
@@ -49,6 +52,18 @@
   button.primary:hover { background: #b35e3b; }
   button.danger { color: var(--red); }
   button.small { padding: 3px 10px; font-size: 12px; border-radius: 6px; }
+
+  /* ===== room bar ===== */
+  .room-bar {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--sakura-soft); border: 1px solid #f3bed2;
+    border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; font-size: 12px;
+  }
+  .room-bar.show { display: flex; }
+  .room-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sakura); flex-shrink: 0; animation: pulse-dot 1.8s ease-in-out infinite; }
+  @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  .room-bar-info { color: var(--sakura); font-weight: 700; flex: 1; min-width: 0; }
+  .room-url-input { flex: 1; min-width: 180px; font-size: 12px; padding: 4px 8px; background: #fff; border: 1px solid #f3bed2; border-radius: 6px; color: var(--ink); }
 
   /* ===== toolbar ===== */
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
@@ -112,7 +127,6 @@
   .card .deco { position: absolute; top: 8px; right: 10px; font-size: 18px; pointer-events: none; }
   .card .card-head { padding-right: 26px; }
 
-  /* 通過 = 桜 */
   .card.s-pass, .panel.s-pass { background: linear-gradient(135deg, #fff8fa 0%, #ffe9f1 100%); border-color: #f3bed2; }
   .card.s-pass::before, .panel.s-pass::before {
     content: '🌸'; position: absolute; bottom: -8px; left: -8px; font-size: 38px;
@@ -124,7 +138,6 @@
     50% { transform: translateY(-6px) rotate(16deg); }
   }
 
-  /* 落選 = 悲しい雨 */
   .card.s-fail, .panel.s-fail { background: linear-gradient(180deg, #f5f5f8 0%, #eae8ef 100%); border-color: #d8d5e0; }
   .card.s-fail .card-name, .card.s-fail .card-preview, .card.s-fail .card-meta { color: #8f8c9a; }
   .card.s-fail::before, .panel.s-fail::before {
@@ -137,7 +150,6 @@
     75% { transform: translateY(5px); opacity: .5; }
   }
 
-  /* 提出済 = ドキドキ */
   .card.s-done, .panel.s-done { background: linear-gradient(135deg, #fffaf2 0%, #ffeddc 100%); border-color: #efc6a2; }
   .card.s-done, .panel.s-done { animation: doki-glow 1.5s ease-in-out infinite; }
   .card.s-done .deco { animation: heartbeat 1.5s ease-in-out infinite; transform-origin: center; }
@@ -185,6 +197,19 @@
   .add-q:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .hidden { display: none; }
 
+  /* ===== 添削欄 ===== */
+  .correction-area { margin-top: 10px; }
+  .correction-area.collapsed { display: none; }
+  .f-correction {
+    min-height: 80px; background: var(--sakura-soft); border-color: #f3bed2;
+    font-size: 13px; line-height: 1.7;
+  }
+  .f-correction:focus { border-color: var(--sakura); outline-color: #fdd6e8; }
+  .correction-label { color: var(--sakura) !important; }
+  .correction-hint { font-size: 11px; color: var(--sakura); opacity: .7; margin-top: 3px; }
+  button.act-correction { color: var(--sakura); border-color: #f3bed2; }
+  button.act-correction.open { background: var(--sakura-soft); border-color: var(--sakura); }
+
   /* ===== modal ===== */
   .overlay {
     position: fixed; inset: 0; background: rgba(43,42,39,.45); z-index: 50;
@@ -202,6 +227,18 @@
   #paste-status { font-size: 12px; color: var(--accent); margin-right: auto; }
   .overlay.hidden { display: none; }
   footer { margin-top: 28px; text-align: center; font-size: 11px; color: var(--sub); }
+
+  /* ===== share modal ===== */
+  .share-section { border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .share-section h3 { font-size: 14px; font-weight: 700; }
+  .share-or { text-align: center; font-size: 12px; color: var(--sub); margin: 4px 0; }
+  .url-copy-row { display: flex; gap: 8px; }
+  .url-copy-row input { flex: 1; font-size: 12px; background: var(--bg); }
+  .warning-box { background: #fff9ec; border: 1px solid #f5d89a; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #7a5c10; }
+  .sync-status { font-size: 12px; color: var(--sub); display: flex; align-items: center; gap: 6px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
+  .sync-dot.green { background: var(--green); }
+  .sync-dot.orange { background: var(--accent); }
 </style>
 </head>
 <body>
@@ -216,10 +253,21 @@
         <button id="btn-import" class="small" title="JSONバックアップを読み込み">読み込み</button>
         <input type="file" id="file-import" accept=".json" class="hidden">
         <button id="btn-paste">📋 貼り付けて取り込み</button>
+        <button id="btn-share">👥 共有</button>
         <button id="btn-settings" class="small" title="AI解析の設定">⚙️</button>
         <button id="btn-add" class="primary">＋ 新しい企業</button>
       </div>
     </div>
+
+    <!-- room active bar -->
+    <div class="room-bar" id="room-bar">
+      <span class="room-dot"></span>
+      <span class="room-bar-info" id="room-bar-info">共有中</span>
+      <input class="room-url-input" id="room-bar-url" readonly>
+      <button class="small" id="btn-copy-room-url">URLをコピー</button>
+      <button class="small danger" id="btn-leave-room">退出</button>
+    </div>
+
     <div class="toolbar">
       <input id="search" type="text" placeholder="企業名・設問・回答を検索…">
       <div class="chips" id="status-chips"></div>
@@ -286,11 +334,54 @@
     </div>
   </div>
 
+  <!-- ===== share modal ===== -->
+  <div id="share-overlay" class="overlay hidden">
+    <div class="modal">
+      <h2>👥 グループ共有・リアルタイム同期</h2>
+      <p class="hint">同じURLを開いた人同士でESデータをリアルタイムに共有・編集できます。就活仲間や相談員との確認に便利です。</p>
+
+      <div class="warning-box">
+        ⚠️ <b>プライバシーに注意：</b>共有URLを知っている人は誰でもデータを見ることができます。信頼できる相手のみに送信してください。データはP2P中継サーバーを経由して同期されます。
+      </div>
+
+      <div id="share-setup" class="share-section">
+        <h3>新しいルームを作成</h3>
+        <p style="font-size:12px;color:var(--sub)">今のデータを共有URLに変換します。URLを送った相手が開くと同期が始まります。</p>
+        <button id="btn-create-room" class="primary">ルームを作成してURLを生成</button>
+      </div>
+
+      <div class="share-or">── または ──</div>
+
+      <div class="share-section">
+        <h3>既存のルームに参加</h3>
+        <div class="url-copy-row">
+          <input type="text" id="room-join-input" placeholder="共有URLまたはルームIDを貼り付け">
+          <button id="btn-join-room" class="primary">参加</button>
+        </div>
+      </div>
+
+      <div id="share-active" class="share-section hidden">
+        <h3>共有中 🟢</h3>
+        <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-text">接続中…</span></div>
+        <label style="font-size:12px;color:var(--sub);font-weight:600;">共有URL（コピーして送信）</label>
+        <div class="url-copy-row">
+          <input type="text" id="share-url-input" readonly>
+          <button id="btn-copy-share-url" class="primary">コピー</button>
+        </div>
+        <button id="btn-stop-share" class="danger" style="width:100%;margin-top:4px">共有を終了する</button>
+      </div>
+
+      <div class="modal-actions">
+        <button id="share-close">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== settings modal ===== -->
   <div id="settings-overlay" class="overlay hidden">
     <div class="modal">
       <h2>⚙️ AI解析の設定</h2>
-      <p class="hint">Google Gemini APIキーを登録すると、貼り付け取り込みでAI解析が使えます。キーは<b>このブラウザ内にのみ</b>保存され、外部に送信されるのはGoogleのAPIだけです。キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
+      <p class="hint">Google Gemini APIキーを登録すると、貼り付け取り込みでAI解析が使えます。キーは<b>このブラウザ内にのみ</b>保存され々外部に送信されるはGoogleのAPIだけです。キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
       <div class="field"><label>Gemini APIキー</label><input type="password" id="gem-key" placeholder="AIza… / AQ.… などの形式"></div>
       <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.5-flash"></div>
       <div class="modal-actions">
@@ -300,7 +391,7 @@
     </div>
   </div>
 
-  <footer>データはこのアプリ内に自動保存されます。念のため定期的に「書き出し」でバックアップを取るのがおすすめです。</footer>
+  <footer>データはこのブラウザ内に自動保存されます。念のため定期的に「書き出し」でバックアップを取るのがおすすめです。</footer>
 </div>
 
 <script>
@@ -325,6 +416,11 @@ function persist(showNote = true) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => n.classList.remove('show'), 1500);
   }
+  // debounced room push
+  if (currentRoom && !_gunBusy) {
+    clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(pushToRoom, 500);
+  }
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -347,7 +443,7 @@ function renderList() {
   let list = data.companies.filter(c => {
     if (filterStatus !== 'all' && c.status !== filterStatus) return false;
     if (!q) return true;
-    const hay = [c.name, c.memo, c.url || '', STAGES[c.stage] || '', ...c.questions.flatMap(x => [x.q, x.a])].join(' ').toLowerCase();
+    const hay = [c.name, c.memo, c.url || '', STAGES[c.stage] || '', ...c.questions.flatMap(x => [x.q, x.a, x.correction||''])].join(' ').toLowerCase();
     return hay.includes(q);
   });
   list.sort((a, b) => {
@@ -360,7 +456,7 @@ function renderList() {
   });
   const grid = document.getElementById('grid');
   if (!list.length) {
-    grid.innerHTML = `<div class="empty">${data.companies.length ? '条件に合うESが見つかりません' : 'まだESがありません。<br>「＋ 新しい企業」から最初のESを登録しましょう ✍️'}</div>`;
+    grid.innerHTML = `<div class="empty">${data.companies.length ? '条件に合うESが見つかりません' : 'まだESがありません。<br>「＋ 新しい企業」から最初のESを登録しましょう ✍️'}|/div>`;
     return;
   }
   grid.innerHTML = list.map(c => {
@@ -369,9 +465,11 @@ function renderList() {
     const deco = DECO[c.status] ? `<span class="deco">${DECO[c.status]}</span>` : '';
     const stage = c.stage && STAGES[c.stage] ? `<span class="badge stage-badge">📍 ${STAGES[c.stage]}</span>` : '';
     const link = c.url ? `<a class="card-link" href="${esc(c.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 HP</a>` : '';
+    const hasCorrection = c.questions.some(x => x.correction);
+    const corrBadge = hasCorrection ? `<span style="font-size:11px;color:var(--sakura)">✏️ 添削あり</span>` : '';
     return `<div class="card s-${c.status}" data-id="${c.id}">
       ${deco}<div class="card-head"><div class="card-name">${esc(c.name) || '（無題）'}</div><span class="badge ${cls}">${label}</span></div>
-      <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}${stage}${link}</div>
+      <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}${stage}${link}${corrBadge}</div>
       ${preview ? `<div class="card-preview">${esc(preview)}</div>` : ''}
     </div>`;
   }).join('');
@@ -428,14 +526,18 @@ function countHtml(a, limit) {
   if (limit > 0) extra = len <= limit ? ` / ${limit}字 <span class="ok">OK</span>` : ` / ${limit}字 <span class="ng">${len - limit}字オーバー</span>`;
   return `<b>${len}</b>字${extra}`;
 }
+
 function renderQuestions() {
   const c = getCurrent();
   const wrap = document.getElementById('q-list');
-  wrap.innerHTML = c.questions.map((x, i) => `
+  wrap.innerHTML = c.questions.map((x, i) => {
+    const hasCorr = !!(x.correction);
+    return `
     <div class="panel q-panel" data-qid="${x.id}">
       <div class="q-head">
         <span class="q-num">設問 ${i + 1}</span>
         <div class="q-tools">
+          <button class="small act-correction${hasCorr ? ' open' : ''}" title="添削コメントを開く/閉じる">✏️ 添削</button>
           <button class="small act-copy">回答をコピー</button>
           <button class="small danger act-delq">削除</button>
         </div>
@@ -446,17 +548,33 @@ function renderQuestions() {
       </div>
       <div class="field"><label>回答</label><textarea class="f-a" placeholder="回答を入力…">${esc(x.a)}</textarea></div>
       <div class="count ${x.limit > 0 && [...(x.a||'')].length > x.limit ? 'over' : ''}">${countHtml(x.a, x.limit)}</div>
-    </div>`).join('');
+      <div class="correction-area${hasCorr ? '' : ' collapsed'}">
+        <div class="field" style="margin-top:8px">
+          <label class="correction-label">✏️ 添削コメント</label>
+          <textarea class="f-correction" placeholder="改善案・添削メモ・第三者からのフィードバックをここに記入…">${esc(x.correction||'')}</textarea>
+          <span class="correction-hint">添削内容はカードの一覧にバッジとして表示されます</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 
   wrap.querySelectorAll('.q-panel').forEach(panel => {
     const x = c.questions.find(q => q.id === panel.dataset.qid);
     panel.querySelector('.f-q').oninput = e => { x.q = e.target.value; touch(c); };
     panel.querySelector('.f-limit').oninput = e => { x.limit = parseInt(e.target.value) || 0; updateCount(panel, x); touch(c); };
     panel.querySelector('.f-a').oninput = e => { x.a = e.target.value; updateCount(panel, x); touch(c); };
+    panel.querySelector('.f-correction').oninput = e => { x.correction = e.target.value; touch(c); };
     panel.querySelector('.act-copy').onclick = () => {
       navigator.clipboard.writeText(x.a || '').then(() => {
         const b = panel.querySelector('.act-copy'); b.textContent = '✓ コピー済'; setTimeout(() => b.textContent = '回答をコピー', 1200);
       });
+    };
+    panel.querySelector('.act-correction').onclick = e => {
+      const btn = e.currentTarget;
+      const area = panel.querySelector('.correction-area');
+      const open = area.classList.toggle('collapsed');
+      btn.classList.toggle('open', !open);
+      if (!open) panel.querySelector('.f-correction').focus();
     };
     panel.querySelector('.act-delq').onclick = () => {
       if (!confirm('この設問を削除しますか？')) return;
@@ -473,7 +591,7 @@ function updateCount(panel, x) {
 
 /* ===== events ===== */
 document.getElementById('btn-add').onclick = () => {
-  const c = { id: uid(), name: '', deadline: '', status: 'draft', stage: '', url: '', memo: '', questions: [{ id: uid(), q: '', limit: 0, a: '' }], updatedAt: Date.now() };
+  const c = { id: uid(), name: '', deadline: '', status: 'draft', stage: '', url: '', memo: '', questions: [{ id: uid(), q: '', limit: 0, a: '', correction: '' }], updatedAt: Date.now() };
   data.companies.push(c); persist(false); openDetail(c.id);
 };
 document.getElementById('btn-back').onclick = backToList;
@@ -485,7 +603,7 @@ document.getElementById('btn-del').onclick = () => {
 };
 document.getElementById('btn-add-q').onclick = () => {
   const c = getCurrent();
-  c.questions.push({ id: uid(), q: '', limit: 0, a: '' });
+  c.questions.push({ id: uid(), q: '', limit: 0, a: '', correction: '' });
   touch(c); renderQuestions();
 };
 ['c-name', 'c-deadline', 'c-status', 'c-memo', 'c-url'].forEach(id => {
@@ -542,7 +660,7 @@ function heuristicParse(text) {
   const qs = [];
   let cur = null;
   for (const l of lines) {
-    if (isNoise(l)) { continue; }
+    if (isNoise(l)) continue;
     if (isQ(l)) {
       if (cur) qs.push(cur);
       const m = l.match(LIM_RE);
@@ -554,7 +672,6 @@ function heuristicParse(text) {
   if (cur) qs.push(cur);
   return qs;
 }
-
 function buildPrompt(text) {
   return `以下は就活エントリーシート（ES）のコピー＆ペーストです。実質的な設問と回答のペアを抽出してください。
 ルール:
@@ -581,8 +698,6 @@ async function claudeParse(text) {
   const raw = typeof res === 'string' ? res : (res && (res.text || res.content || res.result)) || JSON.stringify(res);
   return parseJsonOut(raw);
 }
-
-/* ----- Gemini API（ウェブ版用・キーはこのブラウザにのみ保存） ----- */
 const GEM_KEY = 'es-manager-gemini';
 function geminiConf() {
   try { return JSON.parse(localStorage.getItem(GEM_KEY)) || {}; } catch { return {}; }
@@ -605,7 +720,6 @@ function aiMode() {
   if (geminiConf().key) return 'gemini';
   return 'none';
 }
-
 function openPasteModal() {
   const mode = aiMode();
   document.getElementById('parse-mode-label').textContent =
@@ -615,11 +729,9 @@ function openPasteModal() {
   document.getElementById('paste-text').focus();
 }
 function closePasteModal() { document.getElementById('paste-overlay').classList.add('hidden'); }
-
 document.getElementById('btn-paste').onclick = openPasteModal;
 document.getElementById('paste-cancel').onclick = closePasteModal;
 document.getElementById('paste-overlay').onclick = e => { if (e.target.id === 'paste-overlay') closePasteModal(); };
-
 document.getElementById('paste-run').onclick = async () => {
   const text = document.getElementById('paste-text').value.trim();
   if (!text) { alert('ESの内容を貼り付けてください。'); return; }
@@ -634,16 +746,16 @@ document.getElementById('paste-run').onclick = async () => {
     if (mode !== 'none') {
       try {
         const d = mode === 'claude' ? await claudeParse(text) : await geminiParse(text);
-        questions = d.questions.map(x => ({ id: uid(), q: x.q || '', limit: parseInt(x.limit) || 0, a: x.a || '' }));
+        questions = d.questions.map(x => ({ id: uid(), q: x.q || '', limit: parseInt(x.limit) || 0, a: x.a || '', correction: '' }));
         if (!name && d.name) name = d.name;
       } catch (e) {
-        questions = heuristicParse(text).map(x => ({ id: uid(), ...x }));
+        questions = heuristicParse(text).map(x => ({ id: uid(), correction: '', ...x }));
       }
     } else {
-      questions = heuristicParse(text).map(x => ({ id: uid(), ...x }));
+      questions = heuristicParse(text).map(x => ({ id: uid(), correction: '', ...x }));
     }
     if (!questions.length) {
-      questions = [{ id: uid(), q: '', limit: 0, a: text }];
+      questions = [{ id: uid(), q: '', limit: 0, a: text, correction: '' }];
       status.textContent = '設問を自動で分けられなかったため、全文を1つの回答として取り込みました。';
     }
     const c = { id: uid(), name, deadline: '', status: 'draft', stage: 'es', url: '', memo: '', questions, updatedAt: Date.now() };
@@ -675,8 +787,201 @@ document.getElementById('settings-save').onclick = () => {
   else localStorage.removeItem(GEM_KEY);
   document.getElementById('settings-overlay').classList.add('hidden');
 };
-
 if (window.cowork && window.cowork.askClaude) document.getElementById('btn-settings').style.display = 'none';
+
+/* ===== リアルタイム共有 (Gun.js P2P) ===== */
+let _gun = null;
+let _gunNode = null;
+let currentRoom = null;
+let _pushTs = 0;
+let _gunBusy = false;
+let _syncTimer = null;
+let _syncConnected = false;
+
+function getGun() {
+  if (!_gun) {
+    _gun = new Gun({
+      peers: ['https://relay.gun.eco/gun', 'https://gun-us.herokuapp.com/gun'],
+      localStorage: false
+    });
+  }
+  return _gun;
+}
+
+function roomShareUrl(roomId) {
+  const base = location.origin + location.pathname;
+  return base + '?room=' + roomId;
+}
+
+function pushToRoom() {
+  if (!_gunNode) return;
+  _pushTs = Date.now();
+  _gunBusy = true;
+  _gunNode.put({ ts: _pushTs, json: JSON.stringify(data) });
+  setTimeout(() => { _gunBusy = false; }, 600);
+}
+
+function startRoom(roomId, isCreator) {
+  if (_gunNode) { try { _gunNode.off(); } catch(e) {} }
+  currentRoom = roomId;
+
+  // Update URL
+  const url = new URL(location.href);
+  url.searchParams.set('room', roomId);
+  history.replaceState({}, '', url.toString());
+
+  _gunNode = getGun().get('esm-v2-' + roomId);
+  _syncConnected = false;
+  setSyncStatus('connecting');
+
+  let firstFire = true;
+  _gunNode.on(d => {
+    _syncConnected = true;
+    setSyncStatus('connected');
+
+    if (firstFire) {
+      firstFire = false;
+      if (!d || !d.json) {
+        // Empty room (new) – push our data
+        if (isCreator) pushToRoom();
+      } else {
+        // Existing room – take room data (visitor joining)
+        if (!isCreator) {
+          applyRemoteData(d);
+        }
+      }
+      return;
+    }
+
+    // Subsequent updates from others
+    if (!d || !d.json || !d.ts) return;
+    if (d.ts <= _pushTs) return; // our own echo
+    applyRemoteData(d);
+  });
+
+  updateRoomBar(true, roomId);
+  updateShareModalActive(true, roomId);
+}
+
+function applyRemoteData(d) {
+  try {
+    const parsed = JSON.parse(d.json);
+    if (!Array.isArray(parsed.companies)) return;
+    data = parsed;
+    localStorage.setItem(KEY, JSON.stringify(data));
+    renderList();
+    if (currentId) {
+      const still = data.companies.find(c => c.id === currentId);
+      if (still) renderQuestions();
+      else backToList();
+    }
+  } catch(e) {}
+}
+
+function stopRoom() {
+  if (_gunNode) { try { _gunNode.off(); } catch(e) {} }
+  _gunNode = null;
+  currentRoom = null;
+  _pushTs = 0;
+  _syncConnected = false;
+  const url = new URL(location.href);
+  url.searchParams.delete('room');
+  history.replaceState({}, '', url.toString());
+  updateRoomBar(false);
+  updateShareModalActive(false);
+}
+
+function setSyncStatus(state) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-text');
+  if (!dot) return;
+  dot.className = 'sync-dot' + (state === 'connected' ? ' green' : state === 'connecting' ? ' orange' : '');
+  txt.textContent = state === 'connected' ? '接続済み・リアルタイム同期中' : state === 'connecting' ? '接続中…' : '切断';
+}
+
+function updateRoomBar(active, roomId) {
+  const bar = document.getElementById('room-bar');
+  if (!active) { bar.classList.remove('show'); return; }
+  bar.classList.add('show');
+  document.getElementById('room-bar-info').textContent = 'リアルタイム共有中 (ルーム: ' + roomId + ')';
+  document.getElementById('room-bar-url').value = roomShareUrl(roomId);
+}
+
+function updateShareModalActive(active, roomId) {
+  const setup = document.getElementById('share-setup');
+  const activeEl = document.getElementById('share-active');
+  if (!active) {
+    setup.classList.remove('hidden');
+    activeEl.classList.add('hidden');
+    return;
+  }
+  setup.classList.add('hidden');
+  activeEl.classList.remove('hidden');
+  document.getElementById('share-url-input').value = roomShareUrl(roomId);
+  setSyncStatus('connecting');
+}
+
+/* share modal UI */
+document.getElementById('btn-share').onclick = () => {
+  document.getElementById('share-overlay').classList.remove('hidden');
+  if (currentRoom) updateShareModalActive(true, currentRoom);
+};
+document.getElementById('share-close').onclick = () => document.getElementById('share-overlay').classList.add('hidden');
+document.getElementById('share-overlay').onclick = e => { if (e.target.id === 'share-overlay') e.target.classList.add('hidden'); };
+
+document.getElementById('btn-create-room').onclick = () => {
+  const roomId = Math.random().toString(36).slice(2, 8);
+  startRoom(roomId, true);
+};
+
+document.getElementById('btn-join-room').onclick = () => {
+  let val = document.getElementById('room-join-input').value.trim();
+  if (!val) { alert('URLまたはルームIDを入力してください。'); return; }
+  // Extract room ID from URL if needed
+  try {
+    const u = new URL(val);
+    val = u.searchParams.get('room') || val;
+  } catch(e) {}
+  if (val.length < 4) { alert('ルームIDが短すぎます。'); return; }
+  startRoom(val, false);
+  document.getElementById('share-overlay').classList.add('hidden');
+};
+
+document.getElementById('btn-stop-share').onclick = () => {
+  if (confirm('共有を終了しますか？データは引き続きこのブラウザに保存されます。')) {
+    stopRoom();
+    document.getElementById('share-overlay').classList.add('hidden');
+  }
+};
+
+document.getElementById('btn-copy-share-url').onclick = () => {
+  const url = document.getElementById('share-url-input').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const b = document.getElementById('btn-copy-share-url');
+    b.textContent = '✓ コピー済';
+    setTimeout(() => b.textContent = 'コピー', 1500);
+  });
+};
+
+/* room bar copy + leave */
+document.getElementById('btn-copy-room-url').onclick = () => {
+  navigator.clipboard.writeText(document.getElementById('room-bar-url').value).then(() => {
+    const b = document.getElementById('btn-copy-room-url');
+    b.textContent = '✓ コピー済';
+    setTimeout(() => b.textContent = 'URLをコピー', 1500);
+  });
+};
+document.getElementById('btn-leave-room').onclick = () => {
+  if (confirm('共有ルームから退出しまぽか？')) stopRoom();
+};
+
+// Auto-join from URL param on load
+const _urlRoom = new URLSearchParams(location.search).get('room');
+if (_urlRoom) {
+  setTimeout(() => startRoom(_urlRoom, false), 400);
+}
+
+/* ===== init ===== */
 renderChips();
 renderList();
 </script>

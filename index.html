@@ -336,42 +336,22 @@
   <!-- ===== share modal ===== -->
   <div id="share-overlay" class="overlay hidden">
     <div class="modal">
-      <h2>👥 URLで共有・共同編集</h2>
-      <p class="hint">共有URLを知っている人なら誰でも、同じデータを見たり編集したりできます。就活仲間や相談員との添削確認に便利です。</p>
+      <h2>📤 ESデータを共有</h2>
+      <p class="hint">今のESデータをURLに変換します。URLを送るだけで、相手のブラウザにあなたのデータが読み込まれます。外部サーバーには一切送信されません。</p>
 
       <div class="warning-box">
-        ⚠️ <b>プライバシーに注意：</b>URLを知っている人は誰でもデータを閲覧・編集できます。ESの内容は外部サービス（jsonblob.com）に保存されます。信頼できる相手にのみ共有してください。
+        ⚠️ <b>プライバシーに注意：</b>URLにはESの全データが含まれます。信頼できる相手にのみ共有してください。
       </div>
 
-      <div id="share-setup" class="share-section">
-        <h3>共有URLを生成</h3>
-        <p style="font-size:12px;color:var(--sub)">今のデータをクラウドに保存してURLを作ります。URLを送った相手が開くと、あなたのESデータが表示されて一緒に編集できます。</p>
-        <button id="btn-create-room" class="primary">共有URLを生成する</button>
-        <p id="share-creating-status" style="font-size:12px;color:var(--sub);display:none">作成中…</p>
+      <label style="font-size:12px;color:var(--sub);font-weight:600;display:block;margin-bottom:4px">共有URL（コピーして送信）</label>
+      <div class="url-copy-row">
+        <input type="text" id="share-url-input" readonly placeholder="URLを生成中…">
+        <button id="btn-copy-share-url" class="primary">コピー</button>
       </div>
-
-      <div class="share-or">── または ──</div>
-
-      <div class="share-section">
-        <h3>共有URLから参加</h3>
-        <p style="font-size:12px;color:var(--sub)">受け取ったURLをそのままブラウザで開くだけで参加できます。または下に貼り付けて参加：</p>
-        <div class="url-copy-row">
-          <input type="text" id="room-join-input" placeholder="共有URLを貼り付け">
-          <button id="btn-join-room" class="primary">参加</button>
-        </div>
-      </div>
-
-      <div id="share-active" class="share-section hidden">
-        <h3>共有中 🟢</h3>
-        <div class="sync-status"><span class="sync-dot green" id="sync-dot"></span><span id="sync-text">共有中（5秒ごとに同期）</span></div>
-        <label style="font-size:12px;color:var(--sub);font-weight:600;">共有URL（コピーして送信）</label>
-        <div class="url-copy-row">
-          <input type="text" id="share-url-input" readonly>
-          <button id="btn-copy-share-url" class="primary">コピー</button>
-        </div>
-        <p style="font-size:11px;color:var(--sub);margin-top:2px">このURLを開いた人はESデータを閲覧・編集できます。</p>
-        <button id="btn-stop-share" class="danger" style="width:100%;margin-top:4px">共有を終了する</button>
-      </div>
+      <p style="font-size:11px;color:var(--sub);margin-top:6px">
+        📝 URLを開いた人にはあなたの現在のデータが読み込まれます。<br>
+        編集後に再共有するには、もう一度「共有」ボタンを押してURLを更新してください。
+      </p>
 
       <div class="modal-actions">
         <button id="share-close">閉じる</button>
@@ -791,167 +771,34 @@ document.getElementById('settings-save').onclick = () => {
 };
 if (window.cowork && window.cowork.askClaude) document.getElementById('btn-settings').style.display = 'none';
 
-/* ===== URL共有 (jsonblob.com) ===== */
-const BLOB_API = 'https://jsonblob.com/api/jsonBlob';
-let _blobId = null;
-let _pollTimer = null;
-let _syncTimer = null;
-let _lastPushTs = 0;
-let _isPushing = false;
+/* ===== URL共有 (URLハッシュ方式・外部サービス不要) ===== */
 
-function shareUrl(blobId) {
-  return location.origin + location.pathname + '?blob=' + blobId;
+function encodeShareData(d) {
+  const json = JSON.stringify(d);
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  bytes.forEach(b => binary += String.fromCharCode(b));
+  return btoa(binary);
 }
 
-async function createBlobShare() {
-  const res = await fetch(BLOB_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ ...data, _ts: Date.now() })
-  });
-  if (!res.ok) throw new Error('blob create failed: ' + res.status);
-  const loc = res.headers.get('Location') || '';
-  const id = loc.split('/').pop();
-  if (!id) throw new Error('no blob id in response');
-  return id;
+function decodeShareData(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function pushBlob() {
-  if (!_blobId || _isPushing) return;
-  _isPushing = true;
-  _lastPushTs = Date.now();
-  try {
-    await fetch(`${BLOB_API}/${_blobId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, _ts: _lastPushTs })
-    });
-  } catch(e) {} finally { _isPushing = false; }
-}
-
-async function pollBlob() {
-  if (!_blobId || _isPushing) return;
-  try {
-    const res = await fetch(`${BLOB_API}/${_blobId}`);
-    if (!res.ok) return;
-    const remote = await res.json();
-    const remoteTs = remote._ts || 0;
-    if (remoteTs > _lastPushTs + 300) {
-      _lastPushTs = remoteTs;
-      const { _ts, ...remoteData } = remote;
-      data = remoteData;
-      localStorage.setItem(KEY, JSON.stringify(data));
-      renderList();
-      if (currentId) {
-        const still = data.companies.find(c => c.id === currentId);
-        if (still) renderQuestions(); else backToList();
-      }
-    }
-  } catch(e) {}
-}
-
-function startSharing(blobId) {
-  if (_pollTimer) clearInterval(_pollTimer);
-  _blobId = blobId;
-  const url = new URL(location.href);
-  url.searchParams.set('blob', blobId);
-  history.replaceState({}, '', url.toString());
-  _pollTimer = setInterval(pollBlob, 5000);
-  updateRoomBar(true, blobId);
-  updateShareModalActive(true, blobId);
-}
-
-function stopSharing() {
-  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-  clearTimeout(_syncTimer);
-  _blobId = null;
-  _lastPushTs = 0;
-  const url = new URL(location.href);
-  url.searchParams.delete('blob');
-  history.replaceState({}, '', url.toString());
-  updateRoomBar(false);
-  updateShareModalActive(false);
-}
-
-function updateRoomBar(active, blobId) {
-  const bar = document.getElementById('room-bar');
-  if (!active) { bar.classList.remove('show'); return; }
-  bar.classList.add('show');
-  document.getElementById('room-bar-info').textContent = '共有中';
-  document.getElementById('room-bar-url').value = shareUrl(blobId);
-}
-
-function updateShareModalActive(active, blobId) {
-  const setup = document.getElementById('share-setup');
-  const activeEl = document.getElementById('share-active');
-  if (!active) {
-    setup.classList.remove('hidden');
-    activeEl.classList.add('hidden');
-    return;
-  }
-  setup.classList.add('hidden');
-  activeEl.classList.remove('hidden');
-  document.getElementById('share-url-input').value = shareUrl(blobId);
+function generateShareUrl() {
+  return location.origin + location.pathname + '#share=' + encodeShareData(data);
 }
 
 /* share modal UI */
 document.getElementById('btn-share').onclick = () => {
   document.getElementById('share-overlay').classList.remove('hidden');
-  if (_blobId) updateShareModalActive(true, _blobId);
+  document.getElementById('share-url-input').value = generateShareUrl();
 };
 document.getElementById('share-close').onclick = () => document.getElementById('share-overlay').classList.add('hidden');
 document.getElementById('share-overlay').onclick = e => { if (e.target.id === 'share-overlay') e.target.classList.add('hidden'); };
-
-document.getElementById('btn-create-room').onclick = async () => {
-  const btn = document.getElementById('btn-create-room');
-  const status = document.getElementById('share-creating-status');
-  btn.disabled = true;
-  status.style.display = '';
-  try {
-    const id = await createBlobShare();
-    _lastPushTs = Date.now();
-    startSharing(id);
-  } catch(e) {
-    alert('URLの生成に失敗しました。ネットワーク接続を確認してください。');
-  } finally {
-    btn.disabled = false;
-    status.style.display = 'none';
-  }
-};
-
-document.getElementById('btn-join-room').onclick = async () => {
-  let val = document.getElementById('room-join-input').value.trim();
-  if (!val) { alert('共有URLを入力してください。'); return; }
-  let blobId = val;
-  try {
-    const u = new URL(val);
-    blobId = u.searchParams.get('blob') || val;
-  } catch(e) {}
-  if (!blobId || blobId.length < 6) { alert('URLが正しくありません。'); return; }
-  // Load remote data first
-  try {
-    const res = await fetch(`${BLOB_API}/${blobId}`);
-    if (!res.ok) throw new Error('fetch failed');
-    const remote = await res.json();
-    const { _ts, ...remoteData } = remote;
-    data = remoteData;
-    _lastPushTs = _ts || 0;
-    localStorage.setItem(KEY, JSON.stringify(data));
-    renderList();
-  } catch(e) {
-    alert('共有URLのデータを取得できませんでした。URLを確認してください。');
-    return;
-  }
-  startSharing(blobId);
-  document.getElementById('share-overlay').classList.add('hidden');
-};
-
-document.getElementById('btn-stop-share').onclick = () => {
-  if (confirm('共有を終了しますか？データはこのブラウザに引き続き保存されます。')) {
-    stopSharing();
-    document.getElementById('share-overlay').classList.add('hidden');
-  }
-};
 
 document.getElementById('btn-copy-share-url').onclick = () => {
   const url = document.getElementById('share-url-input').value;
@@ -962,35 +809,15 @@ document.getElementById('btn-copy-share-url').onclick = () => {
   });
 };
 
-/* room bar copy + leave */
-document.getElementById('btn-copy-room-url').onclick = () => {
-  navigator.clipboard.writeText(document.getElementById('room-bar-url').value).then(() => {
-    const b = document.getElementById('btn-copy-room-url');
-    b.textContent = '✓ コピー済';
-    setTimeout(() => b.textContent = 'URLをコピー', 1500);
-  });
-};
-document.getElementById('btn-leave-room').onclick = () => {
-  if (confirm('共有から退出しますか？')) stopSharing();
-};
-
-// Auto-join from URL param on load
-const _urlBlob = new URLSearchParams(location.search).get('blob');
-if (_urlBlob) {
-  (async () => {
-    try {
-      const res = await fetch(`${BLOB_API}/${_urlBlob}`);
-      if (res.ok) {
-        const remote = await res.json();
-        const { _ts, ...remoteData } = remote;
-        data = remoteData;
-        _lastPushTs = _ts || 0;
-        localStorage.setItem(KEY, JSON.stringify(data));
-        renderList();
-      }
-    } catch(e) {}
-    startSharing(_urlBlob);
-  })();
+// Auto-load from URL hash on page load
+const _hashMatch = location.hash.match(/^#share=(.+)$/);
+if (_hashMatch) {
+  try {
+    const sharedData = decodeShareData(_hashMatch[1]);
+    data = sharedData;
+    localStorage.setItem(KEY, JSON.stringify(data));
+  } catch(e) {}
+  history.replaceState({}, '', location.pathname + location.search);
 }
 
 /* ===== init ===== */

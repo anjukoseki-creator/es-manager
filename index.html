@@ -234,6 +234,17 @@
   .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
   .sync-dot.green { background: var(--green); }
   .sync-dot.orange { background: var(--accent); }
+
+  /* ===== guide modal ===== */
+  #guide-modal .modal { max-width: 680px; }
+  .guide-section { display: flex; flex-direction: column; gap: 6px; }
+  .guide-section h3 { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .guide-section p, .guide-section li { font-size: 12px; color: var(--sub); line-height: 1.75; }
+  .guide-section ul, .guide-section ol { padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+  .guide-section a { color: var(--accent); }
+  .guide-divider { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+  .guide-warn { background: #fff9ec; border: 1px solid #f5d89a; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #7a5c10; line-height: 1.7; }
+  .guide-warn strong { color: #5c4008; }
 </style>
 </head>
 <body>
@@ -246,6 +257,7 @@
       <div class="top-actions">
         <button id="btn-export" class="small" title="バックアップ用JSONを書き出し">書き出し</button>
         <button id="btn-import" class="small" title="JSONバックアップを読み込み">読み込み</button>
+        <button id="btn-guide" class="small" title="このアプリの概要・安全性について">📖 このアプリを使う前に</button>
         <input type="file" id="file-import" accept=".json" class="hidden">
         <button id="btn-paste">📋 貼り付けて取り込み</button>
         <button id="btn-share">👥 共有</button>
@@ -383,6 +395,66 @@
       <div class="modal-actions">
         <button id="settings-cancel">キャンセル</button>
         <button id="settings-save" class="primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ===== guide modal ===== -->
+  <div id="guide-modal" class="overlay hidden">
+    <div class="modal">
+      <h2>📖 このアプリを使う前に</h2>
+
+      <div class="guide-section">
+        <h3>✨ アプリの概要</h3>
+        <p>「就活メモリー」は、ES（エントリーシート）の管理・添削・共有をまとめてできる無料のWebアプリです。</p>
+        <ul>
+          <li>🏢 企業ごとにES・選考状況を管理</li>
+          <li>🤖 ESを貼り付けるだけでAIが設問ごとに自動整理</li>
+          <li>✏️ 設問ごとに添削コメントを記録・追跡</li>
+          <li>🔗 URLを送るだけで就活仲間とリアルタイム共有</li>
+        </ul>
+      </div>
+
+      <hr class="guide-divider">
+
+      <div class="guide-section">
+        <h3>📝 使い方</h3>
+        <ol>
+          <li>「＋ 新しい企業」ボタンから企業を登録</li>
+          <li>企業名・選考ステータス・締切日を入力</li>
+          <li>「📋 貼り付けて取り込み」でESをAIに整理させる（または手動で設問を追加）</li>
+          <li>各設問に回答・添削コメントを入力</li>
+          <li>「👥 共有」ボタンでURLを生成し、仲間に送る</li>
+        </ol>
+      </div>
+
+      <hr class="guide-divider">
+
+      <div class="guide-section">
+        <h3>🔒 仕組みと安全性</h3>
+        <p><strong>通常使用時：</strong>データはブラウザ（localStorage）内にのみ保存されます。外部サーバーには一切送信されません。</p>
+        <div class="guide-warn">
+          <strong>⚠️ AI機能使用時：</strong>入力したESテキストがGoogleのサーバー（Gemini API）に送信されます。本名・住所などの個人情報は含めないことを推奨します。<br>
+          <strong>⚠️ 共有機能使用時：</strong>HiveMQの公開ブローカーを経由します。ルームIDは8文字のランダム文字列で推測は難しいですが、公開ブローカーのためセキュリティは完全ではありません。機密性の高い情報の共有は自己責任でお願いします。
+        </div>
+      </div>
+
+      <hr class="guide-divider">
+
+      <div class="guide-section">
+        <h3>🔑 Gemini APIキーの取得方法</h3>
+        <p>AI機能（ES自動整理）の使用にはGoogleのGemini APIキーが必要です。</p>
+        <ol>
+          <li><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> にアクセス（Googleアカウントでログイン）</li>
+          <li>「Get API Key」→「Create API key」でキーを発行</li>
+          <li>アプリ右上の ⚙️ ボタンを押してAPIキーを入力・保存</li>
+        </ol>
+        <p>※ APIキーはブラウザ内にのみ保存され、外部に漏洱することはありません。無料枠あり。</p>
+      </div>
+
+      <div class="modal-actions">
+        <button id="guide-close" class="primary">閉じる</button>
       </div>
     </div>
   </div>
@@ -943,6 +1015,20 @@ if (_urlRoom) {
 /* ===== init ===== */
 renderChips();
 renderList();
+
+/* ===== guide modal ===== */
+document.getElementById('btn-guide').onclick = () => {
+  document.getElementById('guide-modal').classList.remove('hidden');
+};
+document.getElementById('guide-close').onclick = () => {
+  document.getElementById('guide-modal').classList.add('hidden');
+};
+document.getElementById('guide-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('guide-modal')) {
+    document.getElementById('guide-modal').classList.add('hidden');
+  }
+});
+
 </script>
 </body>
 </html>

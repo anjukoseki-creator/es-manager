@@ -67,11 +67,6 @@
 
   /* ===== toolbar ===== */
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
-  #search {
-    flex: 1; min-width: 200px; padding: 8px 12px; font-size: 14px; font-family: inherit;
-    border: 1px solid var(--line); border-radius: 8px; background: var(--card);
-  }
-  #search:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
     padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
@@ -269,7 +264,6 @@
     </div>
 
     <div class="toolbar">
-      <input id="search" type="text" placeholder="企業名・設問・回答を検索…">
       <div class="chips" id="status-chips"></div>
       <select id="sort">
         <option value="deadline">締切が近い順</option>
@@ -437,14 +431,8 @@ function dueInfo(d) {
   return `<span>締切 ${ds}</span>`;
 }
 function renderList() {
-  const q = document.getElementById('search').value.trim().toLowerCase();
   const sort = document.getElementById('sort').value;
-  let list = data.companies.filter(c => {
-    if (filterStatus !== 'all' && c.status !== filterStatus) return false;
-    if (!q) return true;
-    const hay = [c.name, c.memo, c.url || '', STAGES[c.stage] || '', ...c.questions.flatMap(x => [x.q, x.a, x.correction||''])].join(' ').toLowerCase();
-    return hay.includes(q);
-  });
+  let list = data.companies.filter(c => filterStatus === 'all' || c.status === filterStatus);
   list.sort((a, b) => {
     if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'ja');
     if (sort === 'updated') return (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -622,7 +610,6 @@ document.getElementById('btn-open-url').onclick = () => {
   if (!u) { alert('ホームページURLを入力してください。'); return; }
   window.open(/^https?:\/\//.test(u) ? u : 'https://' + u, '_blank', 'noopener');
 };
-document.getElementById('search').oninput = renderList;
 document.getElementById('sort').onchange = renderList;
 
 document.getElementById('btn-export').onclick = () => {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>就活メモリー</title>
 <link rel="manifest" href="manifest.json">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <meta name="theme-color" content="#f6a8c4">
@@ -337,22 +337,41 @@
   <!-- ===== share modal ===== -->
   <div id="share-overlay" class="overlay hidden">
     <div class="modal">
-      <h2>📤 ESデータを共有</h2>
-      <p class="hint">今のESデータをURLに変換します。URLを送るだけで、相手のブラウザにあなたのデータが読み込まれます。外部サーバーには一切送信されません。</p>
-
+      <h2>👥 URLで共有・リアルタイム同期</h2>
+      <p class="hint">URLを送るだけで、相手と同じデータをリアルタイムで共有・編集できます。就活仲間との添削確認に便利です。</p>
       <div class="warning-box">
-        ⚠️ <b>プライバシーに注意：</b>URLにはESの全データが含まれます。信頼できる相手にのみ共有してください。
+        ⚠️ <b>プライバシーに注意：</b>URLを知っている人は誰でもデータを閲覧・編集できます。信頼できる相手にのみ共有してください。
       </div>
 
-      <label style="font-size:12px;color:var(--sub);font-weight:600;display:block;margin-bottom:4px">共有URL（コピーして送信）</label>
-      <div class="url-copy-row">
-        <input type="text" id="share-url-input" readonly placeholder="URLを生成中…">
-        <button id="btn-copy-share-url" class="primary">コピー</button>
+      <div id="share-setup" class="share-section">
+        <h3>共有URLを生成</h3>
+        <p style="font-size:12px;color:var(--sub)">ボタンを押すと短いURLが作られます。URLを送った相手が開くと、リアルタイムで同期が始まります。</p>
+        <button id="btn-create-room" class="primary">共有URLを生成する</button>
+        <p id="share-creating-status" style="font-size:12px;color:var(--sub);display:none">接続中…</p>
       </div>
-      <p style="font-size:11px;color:var(--sub);margin-top:6px">
-        📝 URLを開いた人にはあなたの現在のデータが読み込まれます。<br>
-        編集後に再共有するには、もう一度「共有」ボタンを押してURLを更新してください。
-      </p>
+
+      <div class="share-or">── または ──</div>
+
+      <div class="share-section">
+        <h3>共有URLから参加</h3>
+        <p style="font-size:12px;color:var(--sub)">受け取ったURLをそのまま開くだけで参加できます。または下に貼り付けて参加：</p>
+        <div class="url-copy-row">
+          <input type="text" id="room-join-input" placeholder="共有URLを貼り付け">
+          <button id="btn-join-room" class="primary">参加</button>
+        </div>
+      </div>
+
+      <div id="share-active" class="share-section hidden">
+        <h3>共有中 🟢</h3>
+        <div class="sync-status"><span class="sync-dot green" id="sync-dot"></span><span id="sync-text">リアルタイム同期中</span></div>
+        <label style="font-size:12px;color:var(--sub);font-weight:600;">共有URL（コピーして送信）</label>
+        <div class="url-copy-row">
+          <input type="text" id="share-url-input" readonly>
+          <button id="btn-copy-share-url" class="primary">コピー</button>
+        </div>
+        <p style="font-size:11px;color:var(--sub);margin-top:2px">このURLを開いた人はESデータをリアルタイムで閲覧・編集できます。</p>
+        <button id="btn-stop-share" class="danger" style="width:100%;margin-top:4px">共有を終了する</button>
+      </div>
 
       <div class="modal-actions">
         <button id="share-close">閉じる</button>
@@ -386,6 +405,7 @@ let data = load();
 let currentId = null;
 let filterStatus = 'all';
 let saveTimer = null;
+let _room = null;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(KEY)) || { companies: [] }; }
@@ -399,11 +419,7 @@ function persist(showNote = true) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => n.classList.remove('show'), 1500);
   }
-  // debounced blob push
-  if (_blobId) {
-    clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(pushBlob, 600);
-  }
+  if (_room) publishData();
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const esc = s => (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -772,48 +788,169 @@ document.getElementById('settings-save').onclick = () => {
 };
 if (window.cowork && window.cowork.askClaude) document.getElementById('btn-settings').style.display = 'none';
 
-/* ===== URL共有 (URLハッシュ方式・外部サービス不要) ===== */
+/* ===== リアルタイム共有 (MQTT over WebSocket) ===== */
+const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_PREFIX = 'es-manager/v1/';
 
-function encodeShareData(d) {
-  return LZString.compressToEncodedURIComponent(JSON.stringify(d));
+let _mqtt = null;
+let _mqttTopic = null;
+let _mqttTs = 0;
+let _pubTimer = null;
+
+function genRoomId() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
-function decodeShareData(str) {
-  const json = LZString.decompressFromEncodedURIComponent(str);
-  if (!json) throw new Error('decompress failed');
-  return JSON.parse(json);
+function shareUrl(roomId) {
+  return location.origin + location.pathname + '?room=' + roomId;
 }
 
-function generateShareUrl() {
-  return location.origin + location.pathname + '#share=' + encodeShareData(data);
+function publishData() {
+  if (!_mqtt || !_room) return;
+  clearTimeout(_pubTimer);
+  _pubTimer = setTimeout(() => {
+    const ts = Date.now();
+    _mqttTs = ts;
+    _mqtt.publish(_mqttTopic, JSON.stringify({ ...data, _ts: ts }), { retain: true, qos: 1 });
+  }, 500);
 }
 
-/* share modal UI */
+function connectAndJoin(roomId) {
+  return new Promise((resolve, reject) => {
+    const cid = 'esm_' + Math.random().toString(36).slice(2, 10);
+    const client = mqtt.connect(MQTT_BROKER, {
+      clientId: cid, keepalive: 30, reconnectPeriod: 3000, connectTimeout: 8000,
+    });
+    const topic = MQTT_PREFIX + roomId;
+    let done = false;
+    const timeout = setTimeout(() => { if (!done) { done = true; client.end(); reject(new Error('接続タイムアウト（10秒）')); } }, 10000);
+
+    client.on('connect', () => {
+      client.subscribe(topic, { qos: 1 }, err => {
+        clearTimeout(timeout);
+        if (err) { if (!done) { done = true; reject(err); } return; }
+        if (!done) { done = true; resolve(client); }
+      });
+    });
+    client.on('message', (t, payload) => {
+      if (t !== topic) return;
+      try {
+        const msg = JSON.parse(payload.toString());
+        const ts = msg._ts || 0;
+        if (ts > _mqttTs + 300) {
+          _mqttTs = ts;
+          const { _ts, ...remote } = msg;
+          data = remote;
+          localStorage.setItem(KEY, JSON.stringify(data));
+          renderList();
+          if (currentId) {
+            const still = data.companies.find(c => c.id === currentId);
+            if (still) renderQuestions(); else backToList();
+          }
+        }
+      } catch(e) {}
+    });
+    client.on('error', err => { if (!done) { done = true; clearTimeout(timeout); reject(err); } });
+  });
+}
+
+async function startRoom(roomId) {
+  const client = await connectAndJoin(roomId);
+  _mqtt = client;
+  _mqttTopic = MQTT_PREFIX + roomId;
+  _room = roomId;
+  const url = new URL(location.href);
+  url.searchParams.set('room', roomId);
+  history.replaceState({}, '', url.toString());
+  updateRoomBar(true, roomId);
+  updateShareModalActive(true, roomId);
+  publishData(); // send current data with retain so joiners get it immediately
+}
+
+function stopRoom() {
+  clearTimeout(_pubTimer);
+  if (_mqtt) { _mqtt.end(); _mqtt = null; }
+  _room = null; _mqttTopic = null; _mqttTs = 0;
+  const url = new URL(location.href);
+  url.searchParams.delete('room');
+  history.replaceState({}, '', url.toString());
+  updateRoomBar(false);
+  updateShareModalActive(false);
+}
+
+function updateRoomBar(active, roomId) {
+  const bar = document.getElementById('room-bar');
+  if (!active) { bar.classList.remove('show'); return; }
+  bar.classList.add('show');
+  document.getElementById('room-bar-info').textContent = '共有中';
+  document.getElementById('room-bar-url').value = shareUrl(roomId);
+}
+
+function updateShareModalActive(active, roomId) {
+  const setup = document.getElementById('share-setup');
+  const activeEl = document.getElementById('share-active');
+  if (!active) { setup.classList.remove('hidden'); activeEl.classList.add('hidden'); return; }
+  setup.classList.add('hidden');
+  activeEl.classList.remove('hidden');
+  document.getElementById('share-url-input').value = shareUrl(roomId);
+}
+
+/* share modal events */
 document.getElementById('btn-share').onclick = () => {
   document.getElementById('share-overlay').classList.remove('hidden');
-  document.getElementById('share-url-input').value = generateShareUrl();
+  if (_room) updateShareModalActive(true, _room);
 };
 document.getElementById('share-close').onclick = () => document.getElementById('share-overlay').classList.add('hidden');
 document.getElementById('share-overlay').onclick = e => { if (e.target.id === 'share-overlay') e.target.classList.add('hidden'); };
+
+document.getElementById('btn-create-room').onclick = async () => {
+  const btn = document.getElementById('btn-create-room');
+  const status = document.getElementById('share-creating-status');
+  btn.disabled = true; status.style.display = '';
+  try {
+    await startRoom(genRoomId());
+  } catch(e) {
+    alert('共有の開始に失敗しました: ' + e.message);
+  } finally { btn.disabled = false; status.style.display = 'none'; }
+};
+
+document.getElementById('btn-join-room').onclick = async () => {
+  let val = document.getElementById('room-join-input').value.trim();
+  if (!val) { alert('共有URLを入力してください'); return; }
+  let roomId = val;
+  try { const u = new URL(val); roomId = u.searchParams.get('room') || val; } catch(e) {}
+  if (!roomId || roomId.length < 4) { alert('URLが正しくありません'); return; }
+  try {
+    await startRoom(roomId);
+    document.getElementById('share-overlay').classList.add('hidden');
+  } catch(e) { alert('参加に失敗しました: ' + e.message); }
+};
+
+document.getElementById('btn-stop-share').onclick = () => {
+  if (confirm('共有を終了しますか？')) { stopRoom(); document.getElementById('share-overlay').classList.add('hidden'); }
+};
 
 document.getElementById('btn-copy-share-url').onclick = () => {
   const url = document.getElementById('share-url-input').value;
   navigator.clipboard.writeText(url).then(() => {
     const b = document.getElementById('btn-copy-share-url');
-    b.textContent = '✓ コピー済';
-    setTimeout(() => b.textContent = 'コピー', 1500);
+    b.textContent = '✓ コピー済'; setTimeout(() => b.textContent = 'コピー', 1500);
   });
 };
 
-// Auto-load from URL hash on page load
-const _hashMatch = location.hash.match(/^#share=(.+)$/);
-if (_hashMatch) {
-  try {
-    const sharedData = decodeShareData(_hashMatch[1]);
-    data = sharedData;
-    localStorage.setItem(KEY, JSON.stringify(data));
-  } catch(e) {}
-  history.replaceState({}, '', location.pathname + location.search);
+document.getElementById('btn-copy-room-url').onclick = () => {
+  navigator.clipboard.writeText(document.getElementById('room-bar-url').value).then(() => {
+    const b = document.getElementById('btn-copy-room-url');
+    b.textContent = '✓ コピー済'; setTimeout(() => b.textContent = 'URLをコピー', 1500);
+  });
+};
+document.getElementById('btn-leave-room').onclick = () => { if (confirm('共有から退出しますか？')) stopRoom(); };
+
+// Auto-join from URL param on load
+const _urlRoom = new URLSearchParams(location.search).get('room');
+if (_urlRoom) {
+  startRoom(_urlRoom).catch(e => console.warn('auto-join failed:', e));
 }
 
 /* ===== init ===== */

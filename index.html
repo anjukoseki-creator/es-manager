@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>就活メモリー</title>
 <link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <meta name="theme-color" content="#f6a8c4">
@@ -774,18 +775,13 @@ if (window.cowork && window.cowork.askClaude) document.getElementById('btn-setti
 /* ===== URL共有 (URLハッシュ方式・外部サービス不要) ===== */
 
 function encodeShareData(d) {
-  const json = JSON.stringify(d);
-  const bytes = new TextEncoder().encode(json);
-  let binary = '';
-  bytes.forEach(b => binary += String.fromCharCode(b));
-  return btoa(binary);
+  return LZString.compressToEncodedURIComponent(JSON.stringify(d));
 }
 
-function decodeShareData(b64) {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return JSON.parse(new TextDecoder().decode(bytes));
+function decodeShareData(str) {
+  const json = LZString.decompressFromEncodedURIComponent(str);
+  if (!json) throw new Error('decompress failed');
+  return JSON.parse(json);
 }
 
 function generateShareUrl() {

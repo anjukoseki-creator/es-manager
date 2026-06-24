@@ -102,6 +102,14 @@
   .stage-chip.on { background: #6b5a8e; color: #fff; border-color: #6b5a8e; font-weight: 600; }
   .stage-chip.wait.on { background: var(--accent); border-color: var(--accent); }
 
+
+  /* ===== drag & drop ===== */
+  .card[draggable="true"] { cursor: grab; }
+  .card[draggable="true"]:active { cursor: grabbing; }
+  .card.drag-over { outline: 2px dashed var(--accent); outline-offset: 2px; background-color: #fff9f0 !important; }
+  .card.dragging { opacity: 0.4; }
+  .drag-hint { font-size: 11px; color: var(--sub); margin-left: 6px; }
+
   /* ===== selection type chips ===== */
   .type-chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .type-chip {
@@ -293,6 +301,7 @@
         <option value="deadline">締切が近い順</option>
         <option value="updated">更新が新しい順</option>
         <option value="name">企業名順</option>
+        <option value="manual">手動（ドラッグ）</option>
       </select>
     </div>
     <div class="grid" id="grid"></div>
@@ -520,14 +529,17 @@ function dueInfo(d) {
 function renderList() {
   const sort = document.getElementById('sort').value;
   let list = data.companies.filter(c => filterStatus === 'all' || c.status === filterStatus);
-  list.sort((a, b) => {
-    if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'ja');
-    if (sort === 'updated') return (b.updatedAt || 0) - (a.updatedAt || 0);
-    if (!a.deadline && !b.deadline) return (b.updatedAt||0) - (a.updatedAt||0);
-    if (!a.deadline) return 1;
-    if (!b.deadline) return -1;
-    return a.deadline.localeCompare(b.deadline);
-  });
+  if (sort !== 'manual') {
+    list.sort((a, b) => {
+      if (sort === 'name') return (a.name || '').localeCompare(b.name || '', 'ja');
+      if (sort === 'updated') return (b.updatedAt || 0) - (a.updatedAt || 0);
+      if (!a.deadline && !b.deadline) return (b.updatedAt||0) - (a.updatedAt||0);
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return a.deadline.localeCompare(b.deadline);
+    });
+  }
+  const isManual = sort === 'manual';
   const grid = document.getElementById('grid');
   if (!list.length) {
     grid.innerHTML = `<div class="empty">${data.companies.length ? '条件に合うESが見つかりません' : 'まだESがありません。<br>「＋ 新しい企業」から最初のESを登録しましょう ✍️'}</div>`;
@@ -542,13 +554,47 @@ function renderList() {
     const link = c.url ? `<a class="card-link" href="${esc(c.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 HP</a>` : '';
     const hasCorrection = c.questions.some(x => x.correction);
     const corrBadge = hasCorrection ? `<span style="font-size:11px;color:var(--sakura)">✏️ 添削あり</span>` : '';
-    return `<div class="card s-${c.status}" data-id="${c.id}">
+    const dragAttr = isManual ? ' draggable="true"' : '';
+    return `<div class="card s-${c.status}" data-id="${c.id}"${dragAttr}>
       ${deco}<div class="card-head"><div class="card-name">${esc(c.name) || '（無題）'}</div>${typeLabel}<span class="badge ${cls}">${label}</span></div>
       <div class="card-meta"><span>設問 ${c.questions.length}件</span>${dueInfo(c.deadline)}${stage}${link}${corrBadge}</div>
       ${preview ? `<div class="card-preview">${esc(preview)}</div>` : ''}
     </div>`;
   }).join('');
   grid.querySelectorAll('.card').forEach(el => el.onclick = () => openDetail(el.dataset.id));
+  if (isManual) initDragDrop(grid);
+}
+
+function initDragDrop(grid) {
+  let dragId = null;
+  grid.querySelectorAll('.card').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      dragId = card.dataset.id;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
+    });
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
+      if (card.dataset.id !== dragId) card.classList.add('drag-over');
+    });
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if (!dragId || card.dataset.id === dragId) return;
+      const fromIdx = data.companies.findIndex(c => c.id === dragId);
+      const toIdx   = data.companies.findIndex(c => c.id === card.dataset.id);
+      if (fromIdx === -1 || toIdx === -1) return;
+      const [moved] = data.companies.splice(fromIdx, 1);
+      data.companies.splice(toIdx, 0, moved);
+      persist(false);
+      renderList();
+    });
+  });
 }
 function renderChips() {
   const wrap = document.getElementById('status-chips');

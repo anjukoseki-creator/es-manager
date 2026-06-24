@@ -564,11 +564,12 @@ let _drag = null;
 
 function initCardLongPressDrag(grid) {
   grid.querySelectorAll('.card').forEach(card => {
-    let pressTimer = null, sx = 0, sy = 0;
+    let pressTimer = null, sx = 0, sy = 0, pointerId = null;
 
     card.addEventListener('pointerdown', e => {
       if (e.button && e.button !== 0) return;
       sx = e.clientX; sy = e.clientY;
+      pointerId = e.pointerId;
       card.classList.add('drag-pressing');
       pressTimer = setTimeout(() => {
         pressTimer = null;
@@ -599,34 +600,57 @@ function startCardDrag(card, startE) {
   clone.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;pointer-events:none;z-index:9999;opacity:0.9;`;
   document.body.appendChild(clone);
   card.style.opacity = '0.25';
+  card.style.pointerEvents = 'none';
+  document.body.style.userSelect = 'none';
+  document.body.style.touchAction = 'none';
   _drag = { card, clone, grid: card.closest('.grid'),
-            ox: startE.clientX - rect.left, oy: startE.clientY - rect.top, over: null };
+            ox: startE.clientX - rect.left, oy: startE.clientY - rect.top,
+            over: null, lastCy: startE.clientY };
   document.addEventListener('pointermove', onCardDragMove, {passive: false});
   document.addEventListener('pointerup', onCardDragEnd);
+  document.addEventListener('pointercancel', onCardDragEnd);
 }
 
 function onCardDragMove(e) {
   if (!_drag) return;
   e.preventDefault();
   const { clone, card, grid, ox, oy } = _drag;
-  clone.style.top  = (e.clientY - oy) + 'px';
-  clone.style.left = (e.clientX - ox) + 'px';
-  clone.style.display = 'none';
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  clone.style.display = '';
-  const target = el && el.closest('.card[data-id]');
-  grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
-  if (target && target !== card) { target.classList.add('drag-over'); _drag.over = target; }
-  else _drag.over = null;
+  const newTop  = e.clientY - oy;
+  const newLeft = e.clientX - ox;
+  clone.style.top  = newTop + 'px';
+  clone.style.left = newLeft + 'px';
+  _drag.lastCy = e.clientY;
+
+  // Find closest card by vertical midpoint distance
+  const cloneMidY = newTop + clone.offsetHeight / 2;
+  const cloneMidX = newLeft + clone.offsetWidth  / 2;
+  let closest = null, closestDist = Infinity;
+  grid.querySelectorAll('.card').forEach(c => {
+    c.classList.remove('drag-over');
+    if (c === card) return;
+    const r = c.getBoundingClientRect();
+    const dist = Math.hypot(cloneMidX - (r.left + r.width/2), cloneMidY - (r.top + r.height/2));
+    if (dist < closestDist) { closestDist = dist; closest = c; }
+  });
+  if (closest && closestDist < closest.offsetHeight * 1.2) {
+    closest.classList.add('drag-over');
+    _drag.over = closest;
+  } else {
+    _drag.over = null;
+  }
 }
 
 function onCardDragEnd() {
   if (!_drag) return;
   document.removeEventListener('pointermove', onCardDragMove);
   document.removeEventListener('pointerup', onCardDragEnd);
+  document.removeEventListener('pointercancel', onCardDragEnd);
   const { card, clone, grid, over } = _drag;
   clone.remove();
   card.style.opacity = '';
+  card.style.pointerEvents = '';
+  document.body.style.userSelect = '';
+  document.body.style.touchAction = '';
   grid.querySelectorAll('.card').forEach(c => c.classList.remove('drag-over'));
   if (over) {
     const fi = data.companies.findIndex(c => c.id === card.dataset.id);
@@ -634,7 +658,8 @@ function onCardDragEnd() {
     if (fi !== -1 && ti !== -1) {
       const [moved] = data.companies.splice(fi, 1);
       data.companies.splice(ti, 0, moved);
-      persist(false); renderList();
+      persist(false);
+      setTimeout(renderList, 0);
     }
   }
   _drag = null;

@@ -742,25 +742,30 @@ function onCardDragMove(e) {
   const newLeft = e.clientX - ox;
   clone.style.top  = newTop + 'px';
   clone.style.left = newLeft + 'px';
-  _drag.lastCy = e.clientY;
 
-  // Find closest card by vertical midpoint distance
-  const cloneMidY = newTop + clone.offsetHeight / 2;
-  const cloneMidX = newLeft + clone.offsetWidth  / 2;
-  let closest = null, closestDist = Infinity;
+  // Use pointer Y position to find which card we're over
+  const py = e.clientY;
+  let hit = null;
   grid.querySelectorAll('.card').forEach(c => {
     c.classList.remove('drag-over');
     if (c === card) return;
     const r = c.getBoundingClientRect();
-    const dist = Math.hypot(cloneMidX - (r.left + r.width/2), cloneMidY - (r.top + r.height/2));
-    if (dist < closestDist) { closestDist = dist; closest = c; }
+    if (py >= r.top && py <= r.bottom) hit = c;
   });
-  if (closest && closestDist < closest.offsetHeight * 1.2) {
-    closest.classList.add('drag-over');
-    _drag.over = closest;
-  } else {
-    _drag.over = null;
+  // Fallback: if no direct hit, use closest card by pointer Y
+  if (!hit) {
+    let closest = null, closestDist = Infinity;
+    grid.querySelectorAll('.card').forEach(c => {
+      if (c === card) return;
+      const r = c.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      const dist = Math.abs(py - mid);
+      if (dist < closestDist) { closestDist = dist; closest = c; }
+    });
+    if (closest && closestDist < 80) hit = closest;
   }
+  if (hit) { hit.classList.add('drag-over'); _drag.over = hit; }
+  else _drag.over = null;
 }
 
 function onCardDragEnd() {

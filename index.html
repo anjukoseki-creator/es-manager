@@ -268,6 +268,25 @@
   .add-q { width: 100%; padding: 12px; border: 2px dashed var(--line); background: transparent; color: var(--sub); border-radius: 12px; font-weight: 600; }
   .add-q:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
+
+  /* AI feedback panel */
+  .iv-ai-btn { width: 100%; padding: 10px; border-radius: 10px; border: 1.5px solid #818cf8; background: linear-gradient(135deg, #eef2ff, #f5f3ff); color: #4338ca; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity .15s; }
+  .iv-ai-btn:disabled { opacity: .5; cursor: default; }
+  .iv-ai-btn.no-key { border-color: var(--line); color: var(--sub); background: var(--bg); }
+  .iv-feedback { background: linear-gradient(135deg, #1e1b4b, #2e1065); border-radius: 14px; padding: 18px 20px; color: #e0e0ff; display: flex; flex-direction: column; gap: 14px; }
+  .iv-fb-header { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; color: #a5b4fc; letter-spacing: .05em; }
+  .iv-fb-section { display: flex; flex-direction: column; gap: 6px; }
+  .iv-fb-label { font-size: 10px; font-weight: 800; letter-spacing: .12em; padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 2px; }
+  .iv-fb-label.good  { background: rgba(34,197,94,.2);  color: #86efac; }
+  .iv-fb-label.bad   { background: rgba(251,191,36,.2); color: #fde68a; }
+  .iv-fb-label.next  { background: rgba(99,102,241,.3); color: #c7d2fe; }
+  .iv-fb-label.sum   { background: rgba(244,114,182,.2); color: #fbcfe8; }
+  .iv-fb-items { display: flex; flex-direction: column; gap: 5px; padding-left: 6px; }
+  .iv-fb-item { font-size: 12px; line-height: 1.65; color: rgba(255,255,255,.85); display: flex; gap: 8px; }
+  .iv-fb-item::before { content: "•"; color: #818cf8; flex-shrink: 0; margin-top: 1px; }
+  .iv-fb-summary { font-size: 13px; line-height: 1.75; color: rgba(255,255,255,.9); }
+  .iv-fb-refresh { margin-left: auto; font-size: 11px; color: #818cf8; background: rgba(99,102,241,.15); border: 1px solid rgba(99,102,241,.3); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+
   /* ===== interview views ===== */
   .iv-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
   .iv-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.07); transform: translateY(-1px); }
@@ -580,6 +599,9 @@
 
       <div class="iv-section-label">反省点・改善点</div>
       <textarea class="iv-reflection" id="iv-reflection" placeholder="次回に向けて改善したい点、うまくいかなかった点…"></textarea>
+
+      <button class="iv-ai-btn" id="btn-iv-ai">🤖 AIにフィードバックをもらう</button>
+      <div id="iv-feedback-area"></div>
 
     </div>
   </div>
@@ -1537,6 +1559,109 @@ document.querySelectorAll('.feeling-chip').forEach(c => {
     persist(false); renderIvFeelingChips(iv.feeling);
   });
 });
+
+
+/* ===== interview AI feedback ===== */
+function buildIvFeedbackPrompt(iv) {
+  const stageName = IV_STAGES[iv.stage] || iv.stage || '面接';
+  const formatName = [IV_FORMAT[iv.format], IV_TYPE[iv.type]].filter(Boolean).join('・') || '';
+  const feelLabel = iv.feeling ? ['','かなり厳しい','微妙','普通','良かった','かなり良い'][iv.feeling] : '未記入';
+  const qs = (iv.questions||[]).map((q,i) => `Q${i+1}: ${q.q||'(未入力)'}\nA${i+1}: ${q.a||'(未入力)'}`).join('\n\n');
+  return `あなたは就活面接のコーチです。以下の面接記録を読んで、日本語でフィードバックをJSONで返してください。
+
+【企業名】${iv.company||'未記入'}
+【ステージ】${stageName}
+【形式】${formatName}
+【手応え】${feelLabel}
+【質問と回答】
+${qs || '(未記入)'}
+【反省点・改善点（自己記録）】
+${iv.reflection || '(未記入)'}
+
+以下のJSON形式で返してください。他のテキストは含めないでください:
+{
+  "good": ["よかった点を1〜3つ、具体的に"],
+  "improve": ["改善すべき点を1〜3つ、具体的に"],
+  "advice": ["次回面接に向けたアドバイスを1〜3つ"],
+  "summary": "総合的なコメントを2〜3文で"
+}`;
+}
+
+async function runIvAiFeedback() {
+  const iv = data.interviews.find(x => x.id === currentIvId);
+  if (!iv) return;
+  const btn = document.getElementById('btn-iv-ai');
+  const area = document.getElementById('iv-feedback-area');
+  const conf = geminiConf();
+  const hasAI = (window.cowork && window.cowork.askClaude) || conf.key;
+  if (!hasAI) {
+    area.innerHTML = '<div style="font-size:12px;color:var(--sub);padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--line);">⚙️ AI機能を使うには、設定（⚙️）からGemini APIキーを登録してください。</div>';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '⏳ AIが分析中…';
+  area.innerHTML = '';
+  try {
+    let feedbackText;
+    const prompt = buildIvFeedbackPrompt(iv);
+    if (window.cowork && window.cowork.askClaude) {
+      feedbackText = await window.cowork.askClaude(prompt, []);
+    } else {
+      const model = conf.model || 'gemini-2.5-flash';
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      if (!r.ok) throw new Error('Gemini API エラー: ' + r.status);
+      const j = await r.json();
+      feedbackText = j.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+    }
+    // Parse JSON
+    const jsonMatch = feedbackText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('AIの応答を解析できませんでした');
+    const fb = JSON.parse(jsonMatch[0]);
+    iv.aiFeedback = fb;
+    persist(false);
+    renderIvFeedback(fb, area);
+  } catch(e) {
+    area.innerHTML = '<div style="font-size:12px;color:var(--red);padding:10px;background:var(--red-soft);border-radius:8px;border:1px solid var(--red);">❌ ' + esc(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 AIにフィードバックをもらう';
+  }
+}
+
+function renderIvFeedback(fb, area) {
+  if (!fb) { area.innerHTML = ''; return; }
+  const mkItems = arr => (arr||[]).map(t => '<div class="iv-fb-item">' + esc(t) + '</div>').join('');
+  area.innerHTML = '<div class="iv-feedback">' +
+    '<div class="iv-fb-header">✦ AIフィードバック <button class="iv-fb-refresh" id="btn-iv-ai-redo">再生成</button></div>' +
+    (fb.good?.length ? '<div class="iv-fb-section"><span class="iv-fb-label good">✅ よかった点</span><div class="iv-fb-items">' + mkItems(fb.good) + '</div></div>' : '') +
+    (fb.improve?.length ? '<div class="iv-fb-section"><span class="iv-fb-label bad">⚠️ 改善点</span><div class="iv-fb-items">' + mkItems(fb.improve) + '</div></div>' : '') +
+    (fb.advice?.length ? '<div class="iv-fb-section"><span class="iv-fb-label next">💡 次回へのアドバイス</span><div class="iv-fb-items">' + mkItems(fb.advice) + '</div></div>' : '') +
+    (fb.summary ? '<div class="iv-fb-section"><span class="iv-fb-label sum">📝 総評</span><div class="iv-fb-summary">' + esc(fb.summary) + '</div></div>' : '') +
+    '</div>';
+  const redo = document.getElementById('btn-iv-ai-redo');
+  if (redo) redo.onclick = runIvAiFeedback;
+}
+
+document.getElementById('btn-iv-ai').onclick = runIvAiFeedback;
+
+// When opening detail, restore existing feedback
+const _origOpenIvDetail = openIvDetail;
+openIvDetail = function(id) {
+  _origOpenIvDetail(id);
+  const iv = data.interviews.find(x => x.id === id);
+  const area = document.getElementById('iv-feedback-area');
+  const btn = document.getElementById('btn-iv-ai');
+  const conf = geminiConf();
+  const hasAI = (window.cowork && window.cowork.askClaude) || conf.key;
+  if (!hasAI) btn.className = 'iv-ai-btn no-key';
+  else btn.className = 'iv-ai-btn';
+  if (iv && iv.aiFeedback) renderIvFeedback(iv.aiFeedback, area);
+  else if (area) area.innerHTML = '';
+};
 
 document.getElementById('btn-iv-add-q').onclick = () => {
   const iv = data.interviews.find(x => x.id === currentIvId);

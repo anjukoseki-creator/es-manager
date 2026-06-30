@@ -536,7 +536,7 @@
       <div class="provider-fields" id="pf-gemini">
         <p class="hint" style="margin-top:0">キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
         <div class="field"><label>APIキー</label><input type="password" id="gem-key" placeholder="AIza… または AQ.… の形式"></div>
-        <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.5-flash"></div>
+        <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.0-flash"></div>
       </div>
       <div class="provider-fields" id="pf-openai">
         <p class="hint" style="margin-top:0">キーは <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI Platform</a> で発行できます。Ollama等のOpenAI互換APIにも対応。</p>
@@ -1181,7 +1181,7 @@ function geminiConf() {
 }
 async function geminiParse(text) {
   const conf = geminiConf();
-  const model = conf.model || 'gemini-2.5-flash';
+  const model = conf.model || 'gemini-2.0-flash';
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },
@@ -1334,7 +1334,7 @@ async function aiCallRaw(prompt) {
     return j.content?.[0]?.text || '';
   }
   // Gemini (default)
-  const model = conf.model || 'gemini-2.5-flash';
+  const model = conf.model || 'gemini-2.0-flash';
   const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },

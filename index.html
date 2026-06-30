@@ -319,6 +319,12 @@
   .iv-reflection:focus { border-color: var(--accent); outline: none; background: #fff; }
   .btn-iv-delete { color: var(--red); border-color: var(--red); background: var(--red-soft); }
 
+  /* provider tabs in settings */
+  .provider-tabs { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+  .provider-tab { flex: 1; padding: 8px 4px; font-size: 12px; font-weight: 700; border: none; background: none; cursor: pointer; color: var(--sub); transition: background .12s; }
+  .provider-tab.on { background: var(--accent); color: #fff; }
+  .provider-fields { display: none; flex-direction: column; gap: 10px; }
+  .provider-fields.on { display: flex; }
   .hidden { display: none; }
 
   /* ===== 添削欄 ===== */
@@ -520,17 +526,35 @@
   <!-- ===== settings modal ===== -->
   <div id="settings-overlay" class="overlay hidden">
     <div class="modal">
-      <h2>⚙️ AI解析の設定</h2>
-      <p class="hint">Google Gemini APIキーを登録すると、貼り付け取り込みでAI解析が使えます。キーは<b>このブラウザ内にのみ</b>保存され、外部に送信されるのはGoogleのAPIだけです。キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
-      <div class="field"><label>Gemini APIキー</label><input type="password" id="gem-key" placeholder="AIza… / AQ.… などの形式"></div>
-      <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.5-flash"></div>
+      <h2>⚙️ AI設定</h2>
+      <p class="hint">AIプロバイダーとAPIキーを選択してください。キーは<b>このブラウザ内にのみ</b>保存されます。</p>
+      <div class="provider-tabs">
+        <button class="provider-tab" data-p="gemini">Gemini</button>
+        <button class="provider-tab" data-p="openai">OpenAI</button>
+        <button class="provider-tab" data-p="anthropic">Anthropic</button>
+      </div>
+      <div class="provider-fields" id="pf-gemini">
+        <p class="hint" style="margin-top:0">キーは <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で無料発行できます。</p>
+        <div class="field"><label>APIキー</label><input type="password" id="gem-key" placeholder="AIza… または AQ.… の形式"></div>
+        <div class="field"><label>モデル</label><input type="text" id="gem-model" placeholder="gemini-2.5-flash"></div>
+      </div>
+      <div class="provider-fields" id="pf-openai">
+        <p class="hint" style="margin-top:0">キーは <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI Platform</a> で発行できます。Ollama等のOpenAI互換APIにも対応。</p>
+        <div class="field"><label>APIキー</label><input type="password" id="oai-key" placeholder="sk-…（ローカルAPIの場合は不要なことも）"></div>
+        <div class="field"><label>モデル</label><input type="text" id="oai-model" placeholder="gpt-4o-mini"></div>
+        <div class="field"><label>エンドポイント（カスタム時のみ）</label><input type="text" id="oai-endpoint" placeholder="http://localhost:11434/v1/chat/completions"></div>
+      </div>
+      <div class="provider-fields" id="pf-anthropic">
+        <p class="hint" style="margin-top:0">キーは <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic Console</a> で発行できます。※ブラウザからの直接アクセスはCORSにより制限される場合があります。</p>
+        <div class="field"><label>APIキー</label><input type="password" id="ant-key" placeholder="sk-ant-…"></div>
+        <div class="field"><label>モデル</label><input type="text" id="ant-model" placeholder="claude-haiku-4-5-20251001"></div>
+      </div>
       <div class="modal-actions">
         <button id="settings-cancel">キャンセル</button>
         <button id="settings-save" class="primary">保存</button>
       </div>
     </div>
   </div>
-
 
   <!-- ===== interview list view ===== -->
   <div id="view-interviews" class="hidden">
@@ -1170,7 +1194,11 @@ async function geminiParse(text) {
 }
 function aiMode() {
   if (window.cowork && window.cowork.askClaude) return 'claude';
-  if (geminiConf().key) return 'gemini';
+  const conf = loadAiConf();
+  const p = conf.provider || 'gemini';
+  if (p === 'openai' && (conf.oaiKey || conf.oaiEndpoint)) return 'openai';
+  if (p === 'anthropic' && conf.antKey) return 'anthropic';
+  if (conf.key) return 'gemini';
   return 'none';
 }
 function openPasteModal() {
@@ -1198,7 +1226,8 @@ document.getElementById('paste-run').onclick = async () => {
     const mode = aiMode();
     if (mode !== 'none') {
       try {
-        const d = mode === 'claude' ? await claudeParse(text) : await geminiParse(text);
+        const raw = await aiCallRaw(buildPrompt(text));
+        const d = parseJsonOut(raw);
         questions = d.questions.map(x => ({ id: uid(), q: x.q || '', limit: parseInt(x.limit) || 0, a: x.a || '', correction: '' }));
         if (!name && d.name) name = d.name;
       } catch (e) {
@@ -1225,22 +1254,96 @@ document.getElementById('paste-run').onclick = async () => {
 };
 
 /* ===== settings ===== */
+const AI_KEY = 'es-manager-ai';
+function loadAiConf() {
+  try {
+    const v = JSON.parse(localStorage.getItem(AI_KEY));
+    if (v) return v;
+    const old = JSON.parse(localStorage.getItem(GEM_KEY));
+    if (old) return { provider: 'gemini', key: old.key, model: old.model };
+  } catch {}
+  return { provider: 'gemini', key: '', model: '' };
+}
+function saveAiConf(conf) { localStorage.setItem(AI_KEY, JSON.stringify(conf)); }
+
+let _curProvider = 'gemini';
+function switchProviderTab(p) {
+  _curProvider = p;
+  document.querySelectorAll('.provider-tab').forEach(t => t.classList.toggle('on', t.dataset.p === p));
+  document.querySelectorAll('.provider-fields').forEach(f => f.classList.toggle('on', f.id === 'pf-' + p));
+}
+document.querySelectorAll('.provider-tab').forEach(t => t.onclick = () => switchProviderTab(t.dataset.p));
+
 document.getElementById('btn-settings').onclick = () => {
-  const conf = geminiConf();
+  const conf = loadAiConf();
+  switchProviderTab(conf.provider || 'gemini');
   document.getElementById('gem-key').value = conf.key || '';
-  document.getElementById('gem-model').value = conf.model || 'gemini-2.5-flash';
+  document.getElementById('gem-model').value = conf.model || '';
+  document.getElementById('oai-key').value = conf.oaiKey || '';
+  document.getElementById('oai-model').value = conf.oaiModel || '';
+  document.getElementById('oai-endpoint').value = conf.oaiEndpoint || '';
+  document.getElementById('ant-key').value = conf.antKey || '';
+  document.getElementById('ant-model').value = conf.antModel || '';
   document.getElementById('settings-overlay').classList.remove('hidden');
 };
 document.getElementById('settings-cancel').onclick = () => document.getElementById('settings-overlay').classList.add('hidden');
 document.getElementById('settings-overlay').onclick = e => { if (e.target.id === 'settings-overlay') e.target.classList.add('hidden'); };
 document.getElementById('settings-save').onclick = () => {
-  const key = document.getElementById('gem-key').value.trim();
-  const model = document.getElementById('gem-model').value.trim() || 'gemini-2.5-flash';
-  if (key) localStorage.setItem(GEM_KEY, JSON.stringify({ key, model }));
-  else localStorage.removeItem(GEM_KEY);
+  saveAiConf({
+    provider: _curProvider,
+    key: document.getElementById('gem-key').value.trim(),
+    model: document.getElementById('gem-model').value.trim(),
+    oaiKey: document.getElementById('oai-key').value.trim(),
+    oaiModel: document.getElementById('oai-model').value.trim(),
+    oaiEndpoint: document.getElementById('oai-endpoint').value.trim(),
+    antKey: document.getElementById('ant-key').value.trim(),
+    antModel: document.getElementById('ant-model').value.trim(),
+  });
   document.getElementById('settings-overlay').classList.add('hidden');
 };
 if (window.cowork && window.cowork.askClaude) document.getElementById('btn-settings').style.display = 'none';
+
+/* ===== unified AI call ===== */
+async function aiCallRaw(prompt) {
+  if (window.cowork && window.cowork.askClaude) {
+    const r = await window.cowork.askClaude(prompt, []);
+    return typeof r === 'string' ? r : (r?.text || r?.content || JSON.stringify(r));
+  }
+  const conf = loadAiConf();
+  const provider = conf.provider || 'gemini';
+  if (provider === 'openai') {
+    const endpoint = conf.oaiEndpoint || 'https://api.openai.com/v1/chat/completions';
+    const headers = { 'Content-Type': 'application/json' };
+    if (conf.oaiKey) headers['Authorization'] = 'Bearer ' + conf.oaiKey;
+    const r = await fetch(endpoint, {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: conf.oaiModel || 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] })
+    });
+    if (!r.ok) throw new Error('OpenAI API エラー: ' + r.status);
+    const j = await r.json();
+    return j.choices?.[0]?.message?.content || '';
+  }
+  if (provider === 'anthropic') {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': conf.antKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: conf.antModel || 'claude-haiku-4-5-20251001', max_tokens: 1024, messages: [{ role: 'user', content: prompt }] })
+    });
+    if (!r.ok) throw new Error('Anthropic API エラー: ' + r.status);
+    const j = await r.json();
+    return j.content?.[0]?.text || '';
+  }
+  // Gemini (default)
+  const model = conf.model || 'gemini-2.5-flash';
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+  });
+  if (!r.ok) throw new Error('Gemini API エラー: ' + r.status);
+  const j = await r.json();
+  return j.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+}
 
 /* ===== リアルタイム共有 (MQTT over WebSocket) ===== */
 const MQTT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
@@ -1592,10 +1695,9 @@ async function runIvAiFeedback() {
   if (!iv) return;
   const btn = document.getElementById('btn-iv-ai');
   const area = document.getElementById('iv-feedback-area');
-  const conf = geminiConf();
-  const hasAI = (window.cowork && window.cowork.askClaude) || conf.key;
+  const hasAI = aiMode() !== 'none';
   if (!hasAI) {
-    area.innerHTML = '<div style="font-size:12px;color:var(--sub);padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--line);">⚙️ AI機能を使うには、設定（⚙️）からGemini APIキーを登録してください。</div>';
+    area.innerHTML = '<div style="font-size:12px;color:var(--sub);padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--line);">⚙️ AI機能を使うには、設定（⚙️）からAPIキーを登録してください（Gemini / OpenAI / Anthropic に対応）。</div>';
     return;
   }
   btn.disabled = true;
@@ -1604,19 +1706,7 @@ async function runIvAiFeedback() {
   try {
     let feedbackText;
     const prompt = buildIvFeedbackPrompt(iv);
-    if (window.cowork && window.cowork.askClaude) {
-      feedbackText = await window.cowork.askClaude(prompt, []);
-    } else {
-      const model = conf.model || 'gemini-2.5-flash';
-      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': conf.key },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      if (!r.ok) throw new Error('Gemini API エラー: ' + r.status);
-      const j = await r.json();
-      feedbackText = j.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    }
+    feedbackText = await aiCallRaw(prompt);
     // Parse JSON
     const jsonMatch = feedbackText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('AIの応答を解析できませんでした');
@@ -1655,9 +1745,7 @@ openIvDetail = function(id) {
   const iv = data.interviews.find(x => x.id === id);
   const area = document.getElementById('iv-feedback-area');
   const btn = document.getElementById('btn-iv-ai');
-  const conf = geminiConf();
-  const hasAI = (window.cowork && window.cowork.askClaude) || conf.key;
-  if (!hasAI) btn.className = 'iv-ai-btn no-key';
+  if (aiMode() === 'none') btn.className = 'iv-ai-btn no-key';
   else btn.className = 'iv-ai-btn';
   if (iv && iv.aiFeedback) renderIvFeedback(iv.aiFeedback, area);
   else if (area) area.innerHTML = '';

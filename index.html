@@ -267,6 +267,39 @@
   .count .ng { color: var(--red); font-weight: 700; }
   .add-q { width: 100%; padding: 12px; border: 2px dashed var(--line); background: transparent; color: var(--sub); border-radius: 12px; font-weight: 600; }
   .add-q:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  /* ===== interview views ===== */
+  .iv-card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+  .iv-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.07); transform: translateY(-1px); }
+  .iv-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .iv-card-company { font-size: 15px; font-weight: 700; }
+  .iv-card-meta { font-size: 12px; color: var(--sub); display: flex; gap: 10px; flex-wrap: wrap; }
+  .iv-feeling-badge { display: inline-flex; gap: 2px; font-size: 13px; }
+  .iv-grid { display: flex; flex-direction: column; gap: 10px; }
+  .iv-stage-badge { background: #efeaf6; color: #6b5a8e; }
+
+  /* detail */
+  .iv-detail-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .iv-panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .iv-section-label { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--accent); margin-bottom: -4px; }
+  .iv-meta-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .iv-meta-row .field { flex: 1; min-width: 120px; }
+  .feeling-chips { display: flex; gap: 6px; }
+  .feeling-chip { padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-size: 13px; cursor: pointer; }
+  .feeling-chip.on { background: #fff3cd; border-color: #f0a500; }
+  .iv-q-list { display: flex; flex-direction: column; gap: 10px; }
+  .iv-q-item { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; position: relative; display: flex; flex-direction: column; gap: 6px; }
+  .iv-q-label { font-size: 11px; font-weight: 700; color: var(--sub); letter-spacing: .04em; }
+  .iv-q-item input, .iv-q-item textarea { border: none; background: transparent; width: 100%; font-family: inherit; font-size: 13px; line-height: 1.65; resize: none; overflow: hidden; }
+  .iv-q-item input:focus, .iv-q-item textarea:focus { outline: none; }
+  .iv-q-item input { font-weight: 600; border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+  .iv-q-del { position: absolute; top: 8px; right: 8px; font-size: 11px; color: var(--sub); background: none; border: none; cursor: pointer; padding: 2px 5px; border-radius: 4px; }
+  .iv-q-del:hover { color: var(--red); background: var(--red-soft); }
+  .btn-iv-add-q { font-size: 12px; color: var(--blue); border: 1px dashed var(--blue); background: var(--blue-soft); border-radius: 8px; padding: 7px; width: 100%; cursor: pointer; }
+  .iv-reflection { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13px; font-family: inherit; background: var(--bg); resize: none; line-height: 1.75; min-height: 80px; overflow: hidden; }
+  .iv-reflection:focus { border-color: var(--accent); outline: none; background: #fff; }
+  .btn-iv-delete { color: var(--red); border-color: var(--red); background: var(--red-soft); }
+
   .hidden { display: none; }
 
   /* ===== 添削欄 ===== */
@@ -339,6 +372,7 @@
         <button id="btn-paste">📋 貼り付けて取り込み</button>
         <button id="btn-share">👥 共有</button>
         <button id="btn-settings" class="small" title="AI解析の設定">⚙️</button>
+        <button id="btn-interviews" class="small" title="面接振り返りを記録">🗣️ 面接記録</button>
         <button id="btn-profile" class="small" title="自分のステータスを入力">👤 自分の情報</button>
         <button id="btn-add" class="primary">＋ 新しい企業</button>
       </div>
@@ -478,6 +512,77 @@
     </div>
   </div>
 
+
+  <!-- ===== interview list view ===== -->
+  <div id="view-interviews" class="hidden">
+    <div class="top">
+      <h1>🗣️ 面接記録</h1>
+      <div class="top-actions">
+        <button id="btn-iv-back" class="small">← ESリストに戻る</button>
+        <button id="btn-iv-add" class="primary">＋ 面接を追加</button>
+      </div>
+    </div>
+    <div class="iv-grid" id="iv-grid"></div>
+  </div>
+
+  <!-- ===== interview detail view ===== -->
+  <div id="view-interview-detail" class="hidden">
+    <div class="iv-detail-bar">
+      <button id="btn-iv-detail-back" class="small">← 面接記録一覧に戻る</button>
+      <button id="btn-iv-delete" class="small btn-iv-delete">🗑️ 削除</button>
+    </div>
+    <div class="iv-panel">
+
+      <div class="iv-section-label">基本情報</div>
+      <div class="iv-meta-row">
+        <div class="field"><label>企業名</label><input type="text" id="iv-company" placeholder="例：株式会社〇〇"></div>
+        <div class="field"><label>面接ステージ</label>
+          <select id="iv-stage">
+            <option value="">選択してください</option>
+            <option value="i1">一次面接</option>
+            <option value="i2">二次面接</option>
+            <option value="i3">最終面接</option>
+            <option value="gd">GD選考</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+      </div>
+      <div class="iv-meta-row">
+        <div class="field"><label>面接日</label><input type="date" id="iv-date"></div>
+        <div class="field"><label>形式</label>
+          <select id="iv-format">
+            <option value="">選択してください</option>
+            <option value="online">オンライン</option>
+            <option value="inperson">対面</option>
+          </select>
+        </div>
+        <div class="field"><label>種別</label>
+          <select id="iv-type">
+            <option value="">選択してください</option>
+            <option value="solo">個人面接</option>
+            <option value="group">集団面接</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="iv-section-label">手応え</div>
+      <div class="feeling-chips" id="iv-feeling-chips">
+        <button class="feeling-chip" data-v="1">😞 かなり厳しい</button>
+        <button class="feeling-chip" data-v="2">😕 微妙</button>
+        <button class="feeling-chip" data-v="3">😐 普通</button>
+        <button class="feeling-chip" data-v="4">🙂 良かった</button>
+        <button class="feeling-chip" data-v="5">😄 かなり良い</button>
+      </div>
+
+      <div class="iv-section-label">聞かれた質問と自分の回答</div>
+      <div class="iv-q-list" id="iv-q-list"></div>
+      <button class="btn-iv-add-q" id="btn-iv-add-q">＋ 質問を追加</button>
+
+      <div class="iv-section-label">反省点・改善点</div>
+      <textarea class="iv-reflection" id="iv-reflection" placeholder="次回に向けて改善したい点、うまくいかなかった点…"></textarea>
+
+    </div>
+  </div>
 
   <!-- ===== profile side panel ===== -->
   <div class="profile-overlay" id="profile-overlay">
@@ -619,8 +724,8 @@ let saveTimer = null;
 let _room = null;
 
 function load() {
-  try { const d = JSON.parse(localStorage.getItem(KEY)); return d || { companies: [], profile: {} }; }
-  catch(e) { return { companies: [], profile: {} }; }
+  try { const d = JSON.parse(localStorage.getItem(KEY)); return d || { companies: [], profile: {}, interviews: [] }; }
+  catch(e) { return { companies: [], profile: {}, interviews: [] }; }
 }
 function persist(showNote = true) {
   localStorage.setItem(KEY, JSON.stringify(data));
@@ -804,8 +909,7 @@ function getCurrent() { return data.companies.find(c => c.id === currentId); }
 function openDetail(id) {
   currentId = id;
   const c = getCurrent(); if (!c) return;
-  document.getElementById('view-list').classList.add('hidden');
-  document.getElementById('view-detail').classList.remove('hidden');
+  showView('view-detail');
   document.getElementById('c-name').value = c.name || '';
   document.getElementById('c-deadline').value = c.deadline || '';
   document.getElementById('c-status').value = c.status || 'draft';
@@ -843,8 +947,7 @@ function renderStageChips(c) {
 }
 function backToList() {
   currentId = null;
-  document.getElementById('view-detail').classList.add('hidden');
-  document.getElementById('view-list').classList.remove('hidden');
+  showView('view-list');
   renderList();
 }
 function touch(c) { c.updatedAt = Date.now(); persist(); }
@@ -1298,6 +1401,174 @@ document.getElementById('guide-modal').addEventListener('click', e => {
     document.getElementById('guide-modal').classList.add('hidden');
   }
 });
+
+
+
+/* ===== interview feature ===== */
+if (!data.interviews) data.interviews = [];
+
+const IV_STAGES = { i1:'一次面接', i2:'二次面接', i3:'最終面接', gd:'GD選考', other:'その他' };
+const IV_FORMAT = { online:'オンライン', inperson:'対面' };
+const IV_TYPE   = { solo:'個人', group:'集団' };
+const IV_FEEL   = { 1:'😞', 2:'😕', 3:'😐', 4:'🙂', 5:'😄' };
+let currentIvId = null;
+
+function showView(name) {
+  ['view-list','view-detail','view-interviews','view-interview-detail'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', id !== name);
+  });
+}
+
+function renderInterviews() {
+  const grid = document.getElementById('iv-grid');
+  if (!data.interviews.length) {
+    grid.innerHTML = '<div class="empty">まだ面接記録がありません。<br>「＋ 面接を追加」から記録しましょう 🗣️</div>';
+    return;
+  }
+  const sorted = [...data.interviews].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+  grid.innerHTML = sorted.map(iv => {
+    const stage = IV_STAGES[iv.stage] || '';
+    const fmt = [IV_FORMAT[iv.format], IV_TYPE[iv.type]].filter(Boolean).join('・');
+    const feel = iv.feeling ? IV_FEEL[iv.feeling] : '';
+    const qCount = (iv.questions||[]).length;
+    return `<div class="iv-card" data-iv-id="${iv.id}">
+      <div class="iv-card-head">
+        <div class="iv-card-company">${esc(iv.company||'（企業名未入力）')}</div>
+        <span class="feeling-badge">${feel}</span>
+      </div>
+      <div class="iv-card-meta">
+        ${stage ? `<span class="badge iv-stage-badge">${stage}</span>` : ''}
+        ${iv.date ? `<span>📅 ${iv.date}</span>` : ''}
+        ${fmt ? `<span>${fmt}</span>` : ''}
+        ${qCount ? `<span>質問 ${qCount}件</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.iv-card').forEach(el => el.onclick = () => openIvDetail(el.dataset.ivId));
+}
+
+function openIvDetail(id) {
+  currentIvId = id;
+  const iv = data.interviews.find(x => x.id === id);
+  if (!iv) return;
+  document.getElementById('iv-company').value = iv.company || '';
+  document.getElementById('iv-stage').value   = iv.stage   || '';
+  document.getElementById('iv-date').value    = iv.date    || '';
+  document.getElementById('iv-format').value  = iv.format  || '';
+  document.getElementById('iv-type').value    = iv.type    || '';
+  document.getElementById('iv-reflection').value = iv.reflection || '';
+  autoResizeEl(document.getElementById('iv-reflection'));
+  renderIvFeelingChips(iv.feeling || 0);
+  renderIvQuestions(iv);
+  showView('view-interview-detail');
+}
+
+function renderIvFeelingChips(val) {
+  document.querySelectorAll('.feeling-chip').forEach(c => {
+    c.classList.toggle('on', parseInt(c.dataset.v) === val);
+  });
+}
+
+function renderIvQuestions(iv) {
+  const list = document.getElementById('iv-q-list');
+  list.innerHTML = '';
+  (iv.questions || []).forEach((q, i) => {
+    const item = document.createElement('div');
+    item.className = 'iv-q-item';
+    item.innerHTML =
+      '<div class="iv-q-label">Q</div>' +
+      '<input class="iv-qi" placeholder="聞かれた質問" value="">' +
+      '<div class="iv-q-label" style="margin-top:4px">A</div>' +
+      '<textarea class="iv-qa" placeholder="自分の回答"></textarea>' +
+      '<button class="iv-q-del" data-i="' + i + '">✕</button>';
+    const qi = item.querySelector('.iv-qi');
+    const qa = item.querySelector('.iv-qa');
+    qi.value = q.q || '';
+    qa.value = q.a || '';
+    setTimeout(() => autoResizeEl(qa), 0);
+    let t;
+    const save = () => { clearTimeout(t); t = setTimeout(() => { iv.questions[i] = { q: qi.value, a: qa.value }; persist(false); }, 500); };
+    qi.addEventListener('input', save);
+    qa.addEventListener('input', () => { autoResizeEl(qa); save(); });
+    item.querySelector('.iv-q-del').addEventListener('click', () => {
+      iv.questions.splice(i, 1); persist(false); renderIvQuestions(iv);
+    });
+    list.appendChild(item);
+  });
+}
+
+function autoResizeEl(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
+function ivField(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  let t;
+  el.addEventListener('input', () => {
+    if (el.tagName === 'TEXTAREA') autoResizeEl(el);
+    clearTimeout(t); t = setTimeout(() => {
+      const iv = data.interviews.find(x => x.id === currentIvId);
+      if (iv) { iv[key] = el.value; persist(false); }
+    }, 500);
+  });
+  el.addEventListener('change', () => {
+    const iv = data.interviews.find(x => x.id === currentIvId);
+    if (iv) { iv[key] = el.value; persist(false); }
+  });
+}
+
+ivField('iv-company', 'company');
+ivField('iv-stage', 'stage');
+ivField('iv-date', 'date');
+ivField('iv-format', 'format');
+ivField('iv-type', 'type');
+ivField('iv-reflection', 'reflection');
+
+document.querySelectorAll('.feeling-chip').forEach(c => {
+  c.addEventListener('click', () => {
+    const iv = data.interviews.find(x => x.id === currentIvId);
+    if (!iv) return;
+    const val = parseInt(c.dataset.v);
+    iv.feeling = iv.feeling === val ? 0 : val;
+    persist(false); renderIvFeelingChips(iv.feeling);
+  });
+});
+
+document.getElementById('btn-iv-add-q').onclick = () => {
+  const iv = data.interviews.find(x => x.id === currentIvId);
+  if (!iv) return;
+  if (!iv.questions) iv.questions = [];
+  iv.questions.push({ q: '', a: '' });
+  persist(false); renderIvQuestions(iv);
+  const items = document.querySelectorAll('.iv-q-item');
+  if (items.length) items[items.length-1].querySelector('.iv-qi').focus();
+};
+
+document.getElementById('btn-interviews').onclick = () => {
+  renderInterviews();
+  showView('view-interviews');
+};
+document.getElementById('btn-iv-back').onclick = () => {
+  document.getElementById('view-list').classList.remove('hidden');
+  document.getElementById('view-interviews').classList.add('hidden');
+};
+document.getElementById('btn-iv-detail-back').onclick = () => {
+  renderInterviews();
+  showView('view-interviews');
+};
+document.getElementById('btn-iv-add').onclick = () => {
+  const iv = { id: uid(), company: '', stage: '', date: '', format: '', type: '', feeling: 0, questions: [], reflection: '', updatedAt: Date.now() };
+  data.interviews.push(iv); persist(false); openIvDetail(iv.id);
+};
+document.getElementById('btn-iv-delete').onclick = () => {
+  if (!confirm('この面接記録を削除しますか？')) return;
+  data.interviews = data.interviews.filter(x => x.id !== currentIvId);
+  persist(false); renderInterviews(); showView('view-interviews');
+};
 
 
 /* ===== profile panel ===== */
